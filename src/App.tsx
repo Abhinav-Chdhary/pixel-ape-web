@@ -16,6 +16,7 @@ const MAX_ZOOM = 6400
 const MIN_CANVAS_SIZE = 4
 const MAX_CANVAS_SIZE = 512
 const CANVAS_PIXEL_SCALE = 32
+const recentSpritesStorageKey = 'pixel-ape-web:recent-sprites'
 
 function App() {
   const [history, setHistory] = useState<PixelProject[]>([])
@@ -41,6 +42,15 @@ function App() {
   const [agentPromptCopied, setAgentPromptCopied] = useState(false)
   const [newSpriteOpen, setNewSpriteOpen] = useState(false)
   const [filesOpen, setFilesOpen] = useState(false)
+  const [recentSpriteIds, setRecentSpriteIds] = useState<string[]>(() => {
+    try {
+      const saved = globalThis.localStorage?.getItem(recentSpritesStorageKey)
+      const parsed: unknown = saved ? JSON.parse(saved) : []
+      return Array.isArray(parsed) ? parsed.filter((id): id is string => typeof id === 'string') : []
+    } catch {
+      return []
+    }
+  })
   const [newSprite, setNewSprite] = useState({ name: 'Untitled sprite', width: 32, height: 32, background: 'transparent' as Background })
   const [newSpriteSizeDraft, setNewSpriteSizeDraft] = useState({ width: '32', height: '32' })
   const [canvasSizeDraft, setCanvasSizeDraft] = useState({ width: '', height: '' })
@@ -62,6 +72,10 @@ function App() {
   const project = workspace.sprites.find((sprite) => sprite.id === workspace.activeSpriteId) ?? workspace.sprites[0]
   activeSpriteIdRef.current = project.id
   const zoom = zoomBySprite[project.id] ?? 1600
+  const recentSprites = [
+    ...recentSpriteIds.map((id) => workspace.sprites.find((sprite) => sprite.id === id)).filter((sprite): sprite is PixelProject & { id: string } => Boolean(sprite)),
+    ...workspace.sprites.filter((sprite) => !recentSpriteIds.includes(sprite.id)),
+  ]
   const updateSelection = (next: { x: number; y: number; width: number; height: number } | null) => {
     selectionRef.current = next
     setSelection(next)
@@ -72,6 +86,14 @@ function App() {
   useEffect(() => {
     setCanvasSizeDraft({ width: String(project.width), height: String(project.height) })
   }, [project.height, project.id, project.width])
+
+  useEffect(() => {
+    setRecentSpriteIds((current) => current[0] === project.id ? current : [project.id, ...current.filter((id) => id !== project.id)].slice(0, 12))
+  }, [project.id])
+
+  useEffect(() => {
+    globalThis.localStorage?.setItem(recentSpritesStorageKey, JSON.stringify(recentSpriteIds))
+  }, [recentSpriteIds])
 
   const commit = useCallback((update: (current: PixelProject) => PixelProject) => {
     updateSprite(activeSpriteIdRef.current, (active) => {
@@ -165,7 +187,7 @@ function App() {
     const ctx = canvas.getContext('2d')!
     const scale = canvas.width / project.width
     ctx.imageSmoothingEnabled = false; ctx.clearRect(0, 0, canvas.width, canvas.height)
-    if (project.background === 'transparent') drawCheckerboard(ctx, canvas.width, scale)
+    if (project.background === 'transparent') drawCheckerboard(ctx, canvas.width, canvas.height, scale)
     else { ctx.fillStyle = project.background; ctx.fillRect(0, 0, canvas.width, canvas.height) }
     const visiblePixels = tool === 'move' && selection && selectionMoveOriginRef.current && selectionPixelsRef.current
       ? previewMovedPixels(project.width, selectionMoveOriginRef.current, selection, selectionPixelsRef.current)
@@ -470,7 +492,7 @@ function App() {
         onToolChange={setTool}
       />}
     />
-    {newSpriteOpen && <div className="dialog-backdrop" role="presentation" onMouseDown={() => setNewSpriteOpen(false)}><section className="new-sprite-dialog" role="dialog" aria-modal="true" aria-labelledby="new-sprite-title" onMouseDown={(event) => event.stopPropagation()}><p className="eyebrow">New sprite tab</p><h2 id="new-sprite-title">Set up your canvas</h2><label>Sprite name<input autoFocus value={newSprite.name} onChange={(event) => setNewSprite({ ...newSprite, name: event.target.value })} /></label><div className="dialog-grid"><label>Width<input type="number" min={MIN_CANVAS_SIZE} max={MAX_CANVAS_SIZE} value={newSpriteSizeDraft.width} onFocus={(event) => event.currentTarget.select()} onChange={(event) => { const value = event.currentTarget.value; setNewSpriteSizeDraft((current) => ({ ...current, width: value })) }} /></label><label>Height<input type="number" min={MIN_CANVAS_SIZE} max={MAX_CANVAS_SIZE} value={newSpriteSizeDraft.height} onFocus={(event) => event.currentTarget.select()} onChange={(event) => { const value = event.currentTarget.value; setNewSpriteSizeDraft((current) => ({ ...current, height: value })) }} /></label></div><p className="canvas-size-note">Canvas dimensions can be from {MIN_CANVAS_SIZE}×{MIN_CANVAS_SIZE} to {MAX_CANVAS_SIZE}×{MAX_CANVAS_SIZE} pixels.</p><fieldset><legend>Background</legend>{backgroundOptions.map((option) => <label key={option.value} className="background-choice"><input type="radio" name="new-background" checked={newSprite.background === option.value} onChange={() => setNewSprite({ ...newSprite, background: option.value })} />{option.label}</label>)}</fieldset><div className="existing-sprites"><div><b>Open an existing file</b><button className="text-button" onClick={() => { setNewSpriteOpen(false); setFilesOpen(true) }}>Browse all files</button></div>{workspace.sprites.slice(0, 4).map((sprite) => <button key={sprite.id} onClick={() => { switchSprite(sprite.id); setNewSpriteOpen(false) }}><span>{sprite.name || 'Untitled sprite'}</span><small>{sprite.width}×{sprite.height}</small></button>)}</div><div className="dialog-actions"><button className="quiet-button" onClick={() => setNewSpriteOpen(false)}>Cancel</button><button onClick={() => void createSprite()}>Create sprite</button></div></section></div>}
+    {newSpriteOpen && <div className="dialog-backdrop" role="presentation" onMouseDown={() => setNewSpriteOpen(false)}><section className="new-sprite-dialog" role="dialog" aria-modal="true" aria-labelledby="new-sprite-title" onMouseDown={(event) => event.stopPropagation()}><p className="eyebrow">New sprite tab</p><h2 id="new-sprite-title">Set up your canvas</h2><label>Sprite name<input autoFocus value={newSprite.name} onChange={(event) => setNewSprite({ ...newSprite, name: event.target.value })} /></label><div className="dialog-grid"><label>Width<input type="number" min={MIN_CANVAS_SIZE} max={MAX_CANVAS_SIZE} value={newSpriteSizeDraft.width} onFocus={(event) => event.currentTarget.select()} onChange={(event) => { const value = event.currentTarget.value; setNewSpriteSizeDraft((current) => ({ ...current, width: value })) }} /></label><label>Height<input type="number" min={MIN_CANVAS_SIZE} max={MAX_CANVAS_SIZE} value={newSpriteSizeDraft.height} onFocus={(event) => event.currentTarget.select()} onChange={(event) => { const value = event.currentTarget.value; setNewSpriteSizeDraft((current) => ({ ...current, height: value })) }} /></label></div><p className="canvas-size-note">Canvas dimensions can be from {MIN_CANVAS_SIZE}×{MIN_CANVAS_SIZE} to {MAX_CANVAS_SIZE}×{MAX_CANVAS_SIZE} pixels.</p><fieldset><legend>Background</legend>{backgroundOptions.map((option) => <label key={option.value} className="background-choice"><input type="radio" name="new-background" checked={newSprite.background === option.value} onChange={() => setNewSprite({ ...newSprite, background: option.value })} />{option.label}</label>)}</fieldset><div className="existing-sprites"><div><b>Open an existing file</b><button className="text-button" onClick={() => { setNewSpriteOpen(false); setFilesOpen(true) }}>Browse all files</button></div>{recentSprites.slice(0, 3).map((sprite) => <button key={sprite.id} onClick={() => { switchSprite(sprite.id); setNewSpriteOpen(false) }}><span>{sprite.name || 'Untitled sprite'}</span><small>{sprite.width}×{sprite.height}</small></button>)}</div><div className="dialog-actions"><button className="quiet-button" onClick={() => setNewSpriteOpen(false)}>Cancel</button><button onClick={() => void createSprite()}>Create sprite</button></div></section></div>}
     {filesOpen && <div className="dialog-backdrop" role="presentation" onMouseDown={() => setFilesOpen(false)}><section className="file-list-dialog" role="dialog" aria-modal="true" aria-labelledby="file-list-title" onMouseDown={(event) => event.stopPropagation()}><p className="eyebrow">Sprite files</p><h2 id="file-list-title">All files</h2><p className="file-list-intro">Open, rename, duplicate, or delete a sprite file.</p><div className="file-list">{workspace.sprites.map((sprite) => <article key={sprite.id} className={sprite.id === project.id ? 'active-file' : ''}><div className="file-name"><input value={sprite.name} onChange={(event) => updateSprite(sprite.id, (current) => ({ ...current, name: event.target.value }))} aria-label={`Rename ${sprite.name || 'sprite'}`} /><small>{sprite.width}×{sprite.height}</small></div><div className="file-actions"><button onClick={() => { switchSprite(sprite.id); setFilesOpen(false) }}>Open</button><button onClick={() => void duplicateSprite(sprite)}>Duplicate</button><button className="delete-file" onClick={() => closeSprite(sprite.id)} disabled={workspace.sprites.length === 1}>Delete</button></div></article>)}</div><div className="dialog-actions"><button className="quiet-button" onClick={() => setFilesOpen(false)}>Done</button></div></section></div>}
     {(!hydrated || !writable) && <div className="file-blocker" role="alert"><section><p className="eyebrow">Project files need attention</p><h2>{!hydrated ? 'The workspace could not be loaded.' : 'Editing is paused until the files are valid.'}</h2>{diagnostics.slice(0, 4).map((item) => <p key={`${item.file}:${item.line}:${item.column}:${item.code}`}><code>{item.file}{item.line ? `:${item.line}:${item.column}` : ''}</code><br />{item.message}</p>)}{!diagnostics.length && <p>Waiting for the local Pixel Ape file server.</p>}</section></div>}
     {conflict && <div className="dialog-backdrop" role="presentation"><section className="conflict-dialog" role="dialog" aria-modal="true" aria-labelledby="conflict-title"><p className="eyebrow">File conflict</p><h2 id="conflict-title">Both the browser and disk changed {conflict.resource === 'manifest' ? 'the workspace' : conflict.resource}.</h2><p>Your browser draft is still safe. Retry overwrites the latest disk version; use disk discards this browser draft.</p><div className="dialog-actions conflict-actions"><button className="quiet-button" onClick={() => void copyConflictDraft(conflict.resource)}>Copy draft</button><button className="quiet-button" onClick={() => exportConflictDraft(conflict.resource)}>Export draft</button><button className="quiet-button" onClick={() => resolveConflict(conflict.resource, 'disk')}>Use disk</button><button onClick={() => resolveConflict(conflict.resource, 'retry')}>Retry draft</button></div></section></div>}
@@ -486,7 +508,7 @@ function App() {
   </>
 }
 
-function drawCheckerboard(ctx: CanvasRenderingContext2D, size: number, pixelScale: number) { for (let y = 0; y < size / pixelScale; y++) for (let x = 0; x < size / pixelScale; x++) { ctx.fillStyle = (x + y) % 2 ? '#dedede' : '#f4f4f4'; ctx.fillRect(x * pixelScale, y * pixelScale, pixelScale, pixelScale) } }
+function drawCheckerboard(ctx: CanvasRenderingContext2D, width: number, height: number, pixelScale: number) { for (let y = 0; y < height / pixelScale; y++) for (let x = 0; x < width / pixelScale; x++) { ctx.fillStyle = (x + y) % 2 ? '#dedede' : '#f4f4f4'; ctx.fillRect(x * pixelScale, y * pixelScale, pixelScale, pixelScale) } }
 
 function previewMovedPixels(
   width: number,

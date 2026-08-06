@@ -1,8 +1,15 @@
-.spriteTab { display: flex; flex: 0 0 auto; align-items: center; gap: 6px; max-width: 189px; border-right: 1px solid #aaa69a; padding: 0 9px; cursor: pointer; }
+.spriteTab { position: relative; z-index: 0; display: flex; flex: 1 1 132px; min-width: 54px; align-items: center; gap: 6px; max-width: 189px; border-right: 1px solid #aaa69a; padding: 0 9px; cursor: pointer; overflow: hidden; }
 .spriteTab:hover { background: #ebe7dc; }
 .active { background: var(--paper); box-shadow: inset 0 3px 0 var(--signal); }
-.spriteTab input { width: min(111px, 24vw); border: 0; border-bottom: 1px solid transparent; outline: 0; background: transparent; color: var(--ink); font-size: var(--text-control); font-weight: 800; padding: 3px 0; text-overflow: ellipsis; }
+.dragHandle { flex: 0 0 14px; width: 14px; height: 28px; border: 0; padding: 0; border-radius: 3px; background: transparent; color: #68665f; cursor: grab; font-size: 16px; line-height: 1; touch-action: none; }
+.dragHandle:hover { background: #d3cfc4; color: var(--ink); }
+.dragHandle:active { cursor: grabbing; }
+.dragHandle:focus-visible { outline: 2px solid var(--signal); outline-offset: 1px; }
+.spriteTab input { width: 100%; min-width: 0; border: 0; border-bottom: 1px solid transparent; outline: 0; background: transparent; color: var(--ink); font-size: var(--text-control); font-weight: 800; padding: 3px 0; text-overflow: ellipsis; }
 .spriteTab input:hover, .spriteTab input:focus { border-color: var(--line); }
 .spriteTab small { font: 500 var(--text-micro) DM Mono, monospace; color: #68665f; }
+.close { flex: 0 0 20px; width: 20px; height: 20px; border: 0; border-radius: 3px; background: transparent; color: #68665f; cursor: pointer; font-size: 18px; line-height: 1; padding: 0; }
+.close:hover { background: #d3cfc4; color: var(--ink); }
+.close:focus-visible { outline: 2px solid var(--signal); outline-offset: 1px; }
 
-@media (max-width: 580px) { .spriteTab { padding: 0 9px; } .spriteTab input { width: 81px; } .spriteTab small { display: none; } }
+@media (max-width: 580px) { .spriteTab { padding: 0 7px; } .spriteTab small { display: none; } }

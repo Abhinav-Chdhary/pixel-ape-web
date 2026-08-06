@@ -1,5 +1,5 @@
 export type Background = string
-export type Tool = 'pencil' | 'fill' | 'eraser' | 'eyedropper' | 'line'
+export type Tool = 'pencil' | 'fill' | 'eraser' | 'eyedropper' | 'line' | 'move'
 export type LineMode = 'straight' | 'curve'
 
 export interface PixelProject {

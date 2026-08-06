@@ -13,6 +13,9 @@ const backgroundOptions: Array<{ value: Background; label: string }> = [
 ]
 const MIN_ZOOM = 100
 const MAX_ZOOM = 6400
+const MIN_CANVAS_SIZE = 4
+const MAX_CANVAS_SIZE = 512
+const CANVAS_PIXEL_SCALE = 32
 
 function App() {
   const [history, setHistory] = useState<PixelProject[]>([])
@@ -37,16 +40,38 @@ function App() {
   const [agentOpen, setAgentOpen] = useState(false)
   const [agentPromptCopied, setAgentPromptCopied] = useState(false)
   const [newSpriteOpen, setNewSpriteOpen] = useState(false)
-  const [newSprite, setNewSprite] = useState({ name: 'Untitled sprite', width: 24, height: 24, background: 'transparent' as Background })
+  const [filesOpen, setFilesOpen] = useState(false)
+  const [newSprite, setNewSprite] = useState({ name: 'Untitled sprite', width: 32, height: 32, background: 'transparent' as Background })
+  const [newSpriteSizeDraft, setNewSpriteSizeDraft] = useState({ width: '32', height: '32' })
+  const [canvasSizeDraft, setCanvasSizeDraft] = useState({ width: '', height: '' })
+  const [referenceImage, setReferenceImage] = useState<HTMLImageElement | null>(null)
+  const [referenceName, setReferenceName] = useState('')
+  const [selection, setSelection] = useState<{ x: number; y: number; width: number; height: number } | null>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
+  const referenceCanvasRef = useRef<HTMLCanvasElement>(null)
   const boardRef = useRef<HTMLDivElement>(null)
   const drawingRef = useRef(false)
   const lineStartRef = useRef<{ x: number; y: number } | null>(null)
   const strokePointRef = useRef<{ x: number; y: number } | null>(null)
+  const selectionStartRef = useRef<{ x: number; y: number } | null>(null)
+  const selectionMoveOriginRef = useRef<{ x: number; y: number; width: number; height: number } | null>(null)
+  const selectionMoveStartRef = useRef<{ x: number; y: number } | null>(null)
+  const selectionPixelsRef = useRef<Array<string | null> | null>(null)
+  const selectionRef = useRef<{ x: number; y: number; width: number; height: number } | null>(null)
   const agentPromptResetTimeoutRef = useRef<number | undefined>(undefined)
   const project = workspace.sprites.find((sprite) => sprite.id === workspace.activeSpriteId) ?? workspace.sprites[0]
   activeSpriteIdRef.current = project.id
   const zoom = zoomBySprite[project.id] ?? 1600
+  const updateSelection = (next: { x: number; y: number; width: number; height: number } | null) => {
+    selectionRef.current = next
+    setSelection(next)
+  }
+  // Keep large canvases responsive while retaining crisp pixel rendering.
+  const canvasPixelScale = Math.min(CANVAS_PIXEL_SCALE, Math.max(1, Math.floor(2048 / Math.max(project.width, project.height))))
+
+  useEffect(() => {
+    setCanvasSizeDraft({ width: String(project.width), height: String(project.height) })
+  }, [project.height, project.id, project.width])
 
   const commit = useCallback((update: (current: PixelProject) => PixelProject) => {
     updateSprite(activeSpriteIdRef.current, (active) => {
@@ -63,6 +88,37 @@ function App() {
     setHistory([]); setFuture([]); setCursor({ x: 0, y: 0 })
   }
 
+  const closeSprite = (id: string) => {
+    if (workspace.sprites.length <= 1) return
+    updateManifest((current) => {
+      const index = current.sprites.findIndex((sprite) => sprite.id === id)
+      if (index < 0 || current.sprites.length <= 1) return current
+      const sprites = current.sprites.filter((sprite) => sprite.id !== id)
+      const activeSpriteId = current.activeSpriteId === id
+        ? sprites[Math.min(index, sprites.length - 1)].id
+        : current.activeSpriteId
+      return { ...current, activeSpriteId, sprites }
+    })
+    setHistory([]); setFuture([])
+  }
+
+  const reorderSprites = (ids: string[]) => {
+    updateManifest((current) => {
+      if (ids.length !== current.sprites.length || new Set(ids).size !== ids.length) return current
+      const spriteById = new Map(current.sprites.map((sprite) => [sprite.id, sprite]))
+      if (ids.some((id) => !spriteById.has(id))) return current
+      const sprites = ids.map((id) => spriteById.get(id)!)
+      if (sprites.every((sprite, index) => sprite === current.sprites[index])) return current
+      return { ...current, sprites }
+    })
+  }
+
+  const duplicateSprite = async (sprite: PixelProject & { id: string }) => {
+    const copy = createProject({ name: `${sprite.name || 'Untitled sprite'} copy`, width: sprite.width, height: sprite.height, background: sprite.background })
+    copy.pixels = [...sprite.pixels]
+    await persistNewSprite(copy)
+  }
+
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.target instanceof HTMLInputElement || event.target instanceof HTMLSelectElement) return
@@ -71,6 +127,7 @@ function App() {
       if (event.key.toLowerCase() === 'e') setTool('eraser')
       if (event.key.toLowerCase() === 'i') setTool('eyedropper')
       if (event.key.toLowerCase() === 'l') setTool('line')
+      if (event.key.toLowerCase() === 'm') setTool('move')
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'z') { event.preventDefault(); if (event.shiftKey) redo(); else undo() }
     }
     window.addEventListener('keydown', onKeyDown)
@@ -79,6 +136,10 @@ function App() {
 
   useEffect(() => {
     if (tool !== 'line') { setCurveStage(null); setLinePreview(null); lineStartRef.current = null }
+  }, [tool])
+
+  useEffect(() => {
+    if (tool !== 'move') updateSelection(null)
   }, [tool])
 
   useEffect(() => { globalThis.localStorage?.setItem('pixel-ape:eraser-size', String(eraserSize)) }, [eraserSize])
@@ -106,7 +167,10 @@ function App() {
     ctx.imageSmoothingEnabled = false; ctx.clearRect(0, 0, canvas.width, canvas.height)
     if (project.background === 'transparent') drawCheckerboard(ctx, canvas.width, scale)
     else { ctx.fillStyle = project.background; ctx.fillRect(0, 0, canvas.width, canvas.height) }
-    project.pixels.forEach((pixel, index) => { if (pixel) { ctx.fillStyle = pixel; ctx.fillRect((index % project.width) * scale, Math.floor(index / project.width) * scale, scale, scale) } })
+    const visiblePixels = tool === 'move' && selection && selectionMoveOriginRef.current && selectionPixelsRef.current
+      ? previewMovedPixels(project.width, selectionMoveOriginRef.current, selection, selectionPixelsRef.current)
+      : project.pixels
+    visiblePixels.forEach((pixel, index) => { if (pixel) { ctx.fillStyle = pixel; ctx.fillRect((index % project.width) * scale, Math.floor(index / project.width) * scale, scale, scale) } })
     const previewPixels = tool === 'line' && linePreview
       ? drawLinePixels(Array<string | null>(project.width * project.height).fill(null), project.width, project.height, linePreview.start, linePreview.end, color)
       : tool === 'line' && curveStage
@@ -119,6 +183,17 @@ function App() {
       for (let i = 0; i <= project.height; i++) { const point = Math.round(i * scale) + .5; ctx.moveTo(0, point); ctx.lineTo(canvas.width, point) }
       ctx.stroke()
     }
+    if (tool === 'move' && selection) {
+      ctx.save()
+      ctx.setLineDash([6, 4])
+      ctx.lineWidth = 2
+      ctx.strokeStyle = '#f4f1e8'
+      ctx.strokeRect(selection.x * scale + 1, selection.y * scale + 1, selection.width * scale - 2, selection.height * scale - 2)
+      ctx.lineDashOffset = 5
+      ctx.strokeStyle = '#171812'
+      ctx.strokeRect(selection.x * scale + 1, selection.y * scale + 1, selection.width * scale - 2, selection.height * scale - 2)
+      ctx.restore()
+    }
     if (tool === 'eraser' && canvasHovered) {
       const offset = Math.floor((eraserSize - 1) / 2)
       const x = (cursor.x - offset) * scale
@@ -127,7 +202,26 @@ function App() {
       ctx.lineWidth = 3; ctx.strokeStyle = '#f4f1e8'; ctx.strokeRect(x, y, size, size)
       ctx.lineWidth = 1; ctx.strokeStyle = '#171812'; ctx.strokeRect(x, y, size, size)
     }
-  }, [canvasHovered, color, curveStage, cursor, eraserSize, gridVisible, linePreview, project, tool])
+  }, [canvasHovered, color, curveStage, cursor, eraserSize, gridVisible, linePreview, project, selection, tool])
+
+  useEffect(() => {
+    const canvas = referenceCanvasRef.current
+    if (!canvas || !referenceImage) return
+    const ctx = canvas.getContext('2d')!
+    const scale = canvas.width / project.width
+    ctx.clearRect(0, 0, canvas.width, canvas.height)
+    ctx.fillStyle = '#f4f1e8'; ctx.fillRect(0, 0, canvas.width, canvas.height)
+    const imageScale = Math.min(canvas.width / referenceImage.width, canvas.height / referenceImage.height)
+    const width = referenceImage.width * imageScale
+    const height = referenceImage.height * imageScale
+    ctx.drawImage(referenceImage, (canvas.width - width) / 2, (canvas.height - height) / 2, width, height)
+    if (gridVisible) {
+      ctx.beginPath(); ctx.strokeStyle = 'rgba(23,24,18,.35)'; ctx.lineWidth = 1
+      for (let i = 0; i <= project.width; i++) { const point = Math.round(i * scale) + .5; ctx.moveTo(point, 0); ctx.lineTo(point, canvas.height) }
+      for (let i = 0; i <= project.height; i++) { const point = Math.round(i * scale) + .5; ctx.moveTo(0, point); ctx.lineTo(canvas.width, point) }
+      ctx.stroke()
+    }
+  }, [gridVisible, project.height, project.width, referenceImage])
 
   const pointFromEvent = (event: React.PointerEvent<HTMLCanvasElement>) => {
     const rect = event.currentTarget.getBoundingClientRect()
@@ -168,6 +262,19 @@ function App() {
   }
   const onPointerDown = (event: React.PointerEvent<HTMLCanvasElement>) => {
     const point = pointFromEvent(event)
+    if (tool === 'move') {
+      if (selection && point.x >= selection.x && point.x < selection.x + selection.width && point.y >= selection.y && point.y < selection.y + selection.height) {
+        selectionMoveOriginRef.current = selection
+        selectionMoveStartRef.current = point
+        selectionPixelsRef.current = project.pixels
+      } else {
+        selectionStartRef.current = point
+        updateSelection({ x: point.x, y: point.y, width: 1, height: 1 })
+      }
+      drawingRef.current = true
+      event.currentTarget.setPointerCapture(event.pointerId)
+      return
+    }
     if (tool === 'eyedropper') { pickColorAt(point.x, point.y); return }
     if (tool === 'line') {
       if (lineMode === 'curve' && curveStage) {
@@ -187,10 +294,34 @@ function App() {
   const onPointerMove = (event: React.PointerEvent<HTMLCanvasElement>) => {
     const point = pointFromEvent(event)
     setCursor(point)
+    if (drawingRef.current && tool === 'move' && selectionStartRef.current) {
+      const start = selectionStartRef.current
+      updateSelection({ x: Math.min(start.x, point.x), y: Math.min(start.y, point.y), width: Math.abs(point.x - start.x) + 1, height: Math.abs(point.y - start.y) + 1 })
+      return
+    }
+    if (drawingRef.current && tool === 'move' && selectionMoveStartRef.current && selectionMoveOriginRef.current) {
+      const start = selectionMoveStartRef.current
+      const origin = selectionMoveOriginRef.current
+      updateSelection({ ...origin, x: Math.max(0, Math.min(project.width - origin.width, origin.x + point.x - start.x)), y: Math.max(0, Math.min(project.height - origin.height, origin.y + point.y - start.y)) })
+      return
+    }
     if (drawingRef.current && tool === 'line' && lineStartRef.current) { setLinePreview({ start: lineStartRef.current, end: point }); return }
     if (drawingRef.current && (tool === 'pencil' || tool === 'eraser')) paintStrokeTo(point)
   }
   const onPointerUp = (event: React.PointerEvent<HTMLCanvasElement>) => {
+    const finalSelection = selectionRef.current
+    if (drawingRef.current && tool === 'move' && selectionMoveOriginRef.current && selectionPixelsRef.current && finalSelection) {
+      const source = selectionMoveOriginRef.current
+      const sourcePixels = selectionPixelsRef.current
+      if (source.x !== finalSelection.x || source.y !== finalSelection.y) {
+        commit((current) => {
+          const pixels = [...current.pixels]
+          for (let y = 0; y < source.height; y++) for (let x = 0; x < source.width; x++) pixels[(source.y + y) * current.width + source.x + x] = null
+          for (let y = 0; y < source.height; y++) for (let x = 0; x < source.width; x++) pixels[(finalSelection.y + y) * current.width + finalSelection.x + x] = sourcePixels[(source.y + y) * current.width + source.x + x]
+          return { ...current, pixels }
+        })
+      }
+    }
     if (drawingRef.current && (tool === 'pencil' || tool === 'eraser')) {
       const point = pointFromEvent(event)
       setCursor(point)
@@ -206,7 +337,20 @@ function App() {
     }
     drawingRef.current = false
     strokePointRef.current = null
+    selectionStartRef.current = null
+    selectionMoveOriginRef.current = null
+    selectionMoveStartRef.current = null
+    selectionPixelsRef.current = null
     setReconciliationPaused(false)
+  }
+  const loadReferenceImage = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.currentTarget.files?.[0]
+    if (!file) return
+    const url = URL.createObjectURL(file)
+    const image = new Image()
+    image.onload = () => { URL.revokeObjectURL(url); setReferenceImage(image); setReferenceName(file.name) }
+    image.src = url
+    event.currentTarget.value = ''
   }
   const undo = () => { const previous = history.at(-1); if (!previous) return; setFuture((items) => [project, ...items]); setHistory((items) => items.slice(0, -1)); updateSprite(project.id, () => previous) }
   const redo = () => { const next = future[0]; if (!next) return; setHistory((items) => [...items, project]); setFuture((items) => items.slice(1)); updateSprite(project.id, () => next) }
@@ -217,12 +361,34 @@ function App() {
     project.pixels.forEach((pixel, index) => { if (pixel) { ctx.fillStyle = pixel; ctx.fillRect(index % project.width, Math.floor(index / project.width), 1, 1) } })
     const link = document.createElement('a'); link.download = `${project.name.toLowerCase().replace(/[^a-z0-9]+/g, '-') || 'sprite'}.png`; link.href = output.toDataURL('image/png'); link.click()
   }
+  const parseSizeDraft = (value: string) => {
+    if (!/^\d+$/.test(value.trim())) return null
+    const numeric = Number(value)
+    if (!Number.isFinite(numeric)) return null
+    return Math.max(MIN_CANVAS_SIZE, Math.min(MAX_CANVAS_SIZE, Math.round(numeric)))
+  }
   const createSprite = async () => {
-    if (!await persistNewSprite(createProject(newSprite))) return
-    setHistory([]); setFuture([]); setNewSpriteOpen(false); setNewSprite({ name: 'Untitled sprite', width: 24, height: 24, background: 'transparent' })
+    const width = parseSizeDraft(newSpriteSizeDraft.width)
+    const height = parseSizeDraft(newSpriteSizeDraft.height)
+    if (width === null || height === null) {
+      setNewSpriteSizeDraft({ width: width === null ? String(newSprite.width) : String(width), height: height === null ? String(newSprite.height) : String(height) })
+      return
+    }
+    if (!await persistNewSprite(createProject({ ...newSprite, width, height }))) return
+    setHistory([]); setFuture([]); setNewSpriteOpen(false); setNewSprite({ name: 'Untitled sprite', width: 32, height: 32, background: 'transparent' })
+    setNewSpriteSizeDraft({ width: '32', height: '32' })
   }
   const setBackground = (background: Background) => commit((current) => ({ ...current, background }))
   const resize = (dimension: 'width' | 'height', value: number) => commit((current) => resizeProject(current, dimension === 'width' ? value : current.width, dimension === 'height' ? value : current.height))
+  const commitCanvasSize = (dimension: 'width' | 'height') => {
+    const value = parseSizeDraft(canvasSizeDraft[dimension])
+    if (value === null) {
+      setCanvasSizeDraft((current) => ({ ...current, [dimension]: String(project[dimension]) }))
+      return
+    }
+    setCanvasSizeDraft((current) => ({ ...current, [dimension]: String(value) }))
+    if (value !== project[dimension]) resize(dimension, value)
+  }
   const clear = () => commit((current) => ({ ...current, pixels: current.pixels.map(() => null) }))
   const setClampedZoom = (value: number) => setZoomBySprite((current) => ({ ...current, [activeSpriteIdRef.current]: Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, Math.round(value / 100) * 100)) }))
   const changeZoom = (amount: number) => setZoomBySprite((current) => ({ ...current, [activeSpriteIdRef.current]: Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, (current[activeSpriteIdRef.current] ?? 1600) + amount)) }))
@@ -242,8 +408,8 @@ function App() {
 
   const canvas = <section className="canvas-area" aria-label="Pixel canvas workspace">
     <div className="canvas-toolbar"><div>
-    </div><div className="canvas-config"><label>W <input type="number" min="4" max="64" value={project.width} onFocus={(event) => event.currentTarget.select()} onChange={(event) => { if (event.currentTarget.valueAsNumber) resize('width', event.currentTarget.valueAsNumber) }} aria-label="Canvas width" /></label><label>H <input type="number" min="4" max="64" value={project.height} onFocus={(event) => event.currentTarget.select()} onChange={(event) => { if (event.currentTarget.valueAsNumber) resize('height', event.currentTarget.valueAsNumber) }} aria-label="Canvas height" /></label><div className="background-control" role="group" aria-label="Canvas background"><span>Background</span>{backgroundOptions.map((option) => <button key={option.value} className={`${option.value} ${project.background === option.value ? 'active' : ''}`} onClick={() => setBackground(option.value)} title={`${option.label} background`} aria-label={`${option.label} background`} />)}</div></div></div>
-    <div className="drafting-board" ref={boardRef}><span className="register top-left" /><span className="register top-right" /><span className="register bottom-left" /><span className="register bottom-right" /><div className="canvas-frame" style={{ width: `${project.width * zoom / 100}px`, height: `${project.height * zoom / 100}px` }}><canvas ref={canvasRef} width={576} height={576} onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerCancel={onPointerUp} onPointerEnter={() => setCanvasHovered(true)} onPointerLeave={() => setCanvasHovered(false)} aria-label={`${project.width} by ${project.height} editable pixel canvas`} /></div></div>
+    </div><div className="canvas-config"><label>W <input type="number" min={MIN_CANVAS_SIZE} max={MAX_CANVAS_SIZE} value={canvasSizeDraft.width} onChange={(event) => { const value = event.currentTarget.value; setCanvasSizeDraft((current) => ({ ...current, width: value })) }} onBlur={() => commitCanvasSize('width')} onKeyDown={(event) => { if (event.key === 'Enter') event.currentTarget.blur() }} aria-label="Canvas width" /></label><label>H <input type="number" min={MIN_CANVAS_SIZE} max={MAX_CANVAS_SIZE} value={canvasSizeDraft.height} onChange={(event) => { const value = event.currentTarget.value; setCanvasSizeDraft((current) => ({ ...current, height: value })) }} onBlur={() => commitCanvasSize('height')} onKeyDown={(event) => { if (event.key === 'Enter') event.currentTarget.blur() }} aria-label="Canvas height" /></label><label className="reference-control">Reference<input type="file" accept="image/*" onChange={loadReferenceImage} /><span>{referenceName || 'Add image'}</span></label><div className="background-control" role="group" aria-label="Canvas background"><span>Background</span>{backgroundOptions.map((option) => <button key={option.value} className={`${option.value} ${project.background === option.value ? 'active' : ''}`} onClick={() => setBackground(option.value)} title={`${option.label} background`} aria-label={`${option.label} background`} />)}</div></div></div>
+    <div className="drafting-board" ref={boardRef}><span className="register top-left" /><span className="register top-right" /><span className="register bottom-left" /><span className="register bottom-right" /><div className="canvas-pair"><div className="canvas-frame" style={{ width: `${project.width * zoom / 100}px`, height: `${project.height * zoom / 100}px` }}><canvas ref={canvasRef} width={project.width * canvasPixelScale} height={project.height * canvasPixelScale} onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerCancel={onPointerUp} onPointerEnter={(event) => { setCanvasHovered(true); setCursor(pointFromEvent(event)) }} onPointerLeave={() => setCanvasHovered(false)} style={{ cursor: tool === 'move' && selection && cursor.x >= selection.x && cursor.x < selection.x + selection.width && cursor.y >= selection.y && cursor.y < selection.y + selection.height ? 'move' : 'crosshair' }} aria-label={`${project.width} by ${project.height} editable pixel canvas`} /></div>{referenceImage && <div className="canvas-frame reference-frame" style={{ width: `${project.width * zoom / 100}px`, height: `${project.height * zoom / 100}px` }}><button className="reference-remove" type="button" onClick={() => { setReferenceImage(null); setReferenceName('') }} aria-label="Remove reference image" title="Remove reference image">×</button><canvas ref={referenceCanvasRef} width={project.width * canvasPixelScale} height={project.height * canvasPixelScale} aria-label={`${project.width} by ${project.height} reference image`} /></div>}</div></div>
     <div className="canvas-status"><span>X <b>{String(cursor.x).padStart(2, '0')}</b></span><span>Y <b>{String(cursor.y).padStart(2, '0')}</b></span><span className="status-rule" /><span>{tool === 'line' && curveStage ? 'CURVE: SET BEND' : tool === 'line' ? `LINE: ${lineMode.toUpperCase()}` : tool.toUpperCase()}</span><label className="grid-control"><input type="checkbox" checked={gridVisible} onChange={(event) => setGridVisible(event.target.checked)} /> Grid</label><div className="zoom-control"><span>Zoom</span><button onClick={() => changeZoom(-100)} disabled={zoom <= MIN_ZOOM} aria-label="Zoom out">−</button><input type="range" min={MIN_ZOOM} max={MAX_ZOOM} step="100" value={zoom} onChange={(event) => setClampedZoom(Number(event.target.value))} aria-label="Canvas zoom" /><button onClick={() => changeZoom(100)} disabled={zoom >= MAX_ZOOM} aria-label="Zoom in">+</button><b>{zoom}%</b></div></div>
   </section>
 
@@ -258,7 +424,10 @@ function App() {
         canUndo={Boolean(history.length)}
         sprites={workspace.sprites}
         onAddSprite={() => setNewSpriteOpen(true)}
+        onCloseSprite={closeSprite}
         onExport={exportPng}
+        onReorderSprites={reorderSprites}
+        onOpenFiles={() => setFilesOpen(true)}
         onOpenGuide={() => { setAgentPromptCopied(false); setAgentOpen(true) }}
         onRedo={redo}
         onRenameSprite={(id, name) => updateSprite(id, (sprite) => ({ ...sprite, name }))}
@@ -301,7 +470,8 @@ function App() {
         onToolChange={setTool}
       />}
     />
-    {newSpriteOpen && <div className="dialog-backdrop" role="presentation" onMouseDown={() => setNewSpriteOpen(false)}><section className="new-sprite-dialog" role="dialog" aria-modal="true" aria-labelledby="new-sprite-title" onMouseDown={(event) => event.stopPropagation()}><p className="eyebrow">New sprite tab</p><h2 id="new-sprite-title">Set up your canvas</h2><label>Sprite name<input autoFocus value={newSprite.name} onChange={(event) => setNewSprite({ ...newSprite, name: event.target.value })} /></label><div className="dialog-grid"><label>Width<input type="number" min="4" max="64" value={newSprite.width} onFocus={(event) => event.currentTarget.select()} onChange={(event) => { if (event.currentTarget.valueAsNumber) setNewSprite({ ...newSprite, width: event.currentTarget.valueAsNumber }) }} /></label><label>Height<input type="number" min="4" max="64" value={newSprite.height} onFocus={(event) => event.currentTarget.select()} onChange={(event) => { if (event.currentTarget.valueAsNumber) setNewSprite({ ...newSprite, height: event.currentTarget.valueAsNumber }) }} /></label></div><fieldset><legend>Background</legend>{backgroundOptions.map((option) => <label key={option.value} className="background-choice"><input type="radio" name="new-background" checked={newSprite.background === option.value} onChange={() => setNewSprite({ ...newSprite, background: option.value })} />{option.label}</label>)}</fieldset><div className="dialog-actions"><button className="quiet-button" onClick={() => setNewSpriteOpen(false)}>Cancel</button><button onClick={() => void createSprite()}>Create sprite</button></div></section></div>}
+    {newSpriteOpen && <div className="dialog-backdrop" role="presentation" onMouseDown={() => setNewSpriteOpen(false)}><section className="new-sprite-dialog" role="dialog" aria-modal="true" aria-labelledby="new-sprite-title" onMouseDown={(event) => event.stopPropagation()}><p className="eyebrow">New sprite tab</p><h2 id="new-sprite-title">Set up your canvas</h2><label>Sprite name<input autoFocus value={newSprite.name} onChange={(event) => setNewSprite({ ...newSprite, name: event.target.value })} /></label><div className="dialog-grid"><label>Width<input type="number" min={MIN_CANVAS_SIZE} max={MAX_CANVAS_SIZE} value={newSpriteSizeDraft.width} onFocus={(event) => event.currentTarget.select()} onChange={(event) => { const value = event.currentTarget.value; setNewSpriteSizeDraft((current) => ({ ...current, width: value })) }} /></label><label>Height<input type="number" min={MIN_CANVAS_SIZE} max={MAX_CANVAS_SIZE} value={newSpriteSizeDraft.height} onFocus={(event) => event.currentTarget.select()} onChange={(event) => { const value = event.currentTarget.value; setNewSpriteSizeDraft((current) => ({ ...current, height: value })) }} /></label></div><p className="canvas-size-note">Canvas dimensions can be from {MIN_CANVAS_SIZE}×{MIN_CANVAS_SIZE} to {MAX_CANVAS_SIZE}×{MAX_CANVAS_SIZE} pixels.</p><fieldset><legend>Background</legend>{backgroundOptions.map((option) => <label key={option.value} className="background-choice"><input type="radio" name="new-background" checked={newSprite.background === option.value} onChange={() => setNewSprite({ ...newSprite, background: option.value })} />{option.label}</label>)}</fieldset><div className="existing-sprites"><div><b>Open an existing file</b><button className="text-button" onClick={() => { setNewSpriteOpen(false); setFilesOpen(true) }}>Browse all files</button></div>{workspace.sprites.slice(0, 4).map((sprite) => <button key={sprite.id} onClick={() => { switchSprite(sprite.id); setNewSpriteOpen(false) }}><span>{sprite.name || 'Untitled sprite'}</span><small>{sprite.width}×{sprite.height}</small></button>)}</div><div className="dialog-actions"><button className="quiet-button" onClick={() => setNewSpriteOpen(false)}>Cancel</button><button onClick={() => void createSprite()}>Create sprite</button></div></section></div>}
+    {filesOpen && <div className="dialog-backdrop" role="presentation" onMouseDown={() => setFilesOpen(false)}><section className="file-list-dialog" role="dialog" aria-modal="true" aria-labelledby="file-list-title" onMouseDown={(event) => event.stopPropagation()}><p className="eyebrow">Sprite files</p><h2 id="file-list-title">All files</h2><p className="file-list-intro">Open, rename, duplicate, or delete a sprite file.</p><div className="file-list">{workspace.sprites.map((sprite) => <article key={sprite.id} className={sprite.id === project.id ? 'active-file' : ''}><div className="file-name"><input value={sprite.name} onChange={(event) => updateSprite(sprite.id, (current) => ({ ...current, name: event.target.value }))} aria-label={`Rename ${sprite.name || 'sprite'}`} /><small>{sprite.width}×{sprite.height}</small></div><div className="file-actions"><button onClick={() => { switchSprite(sprite.id); setFilesOpen(false) }}>Open</button><button onClick={() => void duplicateSprite(sprite)}>Duplicate</button><button className="delete-file" onClick={() => closeSprite(sprite.id)} disabled={workspace.sprites.length === 1}>Delete</button></div></article>)}</div><div className="dialog-actions"><button className="quiet-button" onClick={() => setFilesOpen(false)}>Done</button></div></section></div>}
     {(!hydrated || !writable) && <div className="file-blocker" role="alert"><section><p className="eyebrow">Project files need attention</p><h2>{!hydrated ? 'The workspace could not be loaded.' : 'Editing is paused until the files are valid.'}</h2>{diagnostics.slice(0, 4).map((item) => <p key={`${item.file}:${item.line}:${item.column}:${item.code}`}><code>{item.file}{item.line ? `:${item.line}:${item.column}` : ''}</code><br />{item.message}</p>)}{!diagnostics.length && <p>Waiting for the local Pixel Ape file server.</p>}</section></div>}
     {conflict && <div className="dialog-backdrop" role="presentation"><section className="conflict-dialog" role="dialog" aria-modal="true" aria-labelledby="conflict-title"><p className="eyebrow">File conflict</p><h2 id="conflict-title">Both the browser and disk changed {conflict.resource === 'manifest' ? 'the workspace' : conflict.resource}.</h2><p>Your browser draft is still safe. Retry overwrites the latest disk version; use disk discards this browser draft.</p><div className="dialog-actions conflict-actions"><button className="quiet-button" onClick={() => void copyConflictDraft(conflict.resource)}>Copy draft</button><button className="quiet-button" onClick={() => exportConflictDraft(conflict.resource)}>Export draft</button><button className="quiet-button" onClick={() => resolveConflict(conflict.resource, 'disk')}>Use disk</button><button onClick={() => resolveConflict(conflict.resource, 'retry')}>Retry draft</button></div></section></div>}
     {agentOpen &&
@@ -317,4 +487,16 @@ function App() {
 }
 
 function drawCheckerboard(ctx: CanvasRenderingContext2D, size: number, pixelScale: number) { for (let y = 0; y < size / pixelScale; y++) for (let x = 0; x < size / pixelScale; x++) { ctx.fillStyle = (x + y) % 2 ? '#dedede' : '#f4f4f4'; ctx.fillRect(x * pixelScale, y * pixelScale, pixelScale, pixelScale) } }
+
+function previewMovedPixels(
+  width: number,
+  source: { x: number; y: number; width: number; height: number },
+  destination: { x: number; y: number; width: number; height: number },
+  sourcePixels: Array<string | null>,
+) {
+  const pixels = [...sourcePixels]
+  for (let y = 0; y < source.height; y++) for (let x = 0; x < source.width; x++) pixels[(source.y + y) * width + source.x + x] = null
+  for (let y = 0; y < source.height; y++) for (let x = 0; x < source.width; x++) pixels[(destination.y + y) * width + destination.x + x] = sourcePixels[(source.y + y) * width + source.x + x]
+  return pixels
+}
 export default App

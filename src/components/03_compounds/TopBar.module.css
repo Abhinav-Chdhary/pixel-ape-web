@@ -1,7 +1,7 @@
 .topbar { height: 48px; flex: 0 0 48px; display: flex; align-items: stretch; gap: 12px; padding: 0 12px; border-bottom: 1px solid #8f8b80; background: #e6e2d8; }
 .tabs { min-width: 0; flex: 1 1 auto; display: flex; align-items: stretch; overflow: hidden; }
-.tabList { min-width: 0; display: flex; align-items: stretch; overflow-x: auto; }
-.newTab { flex: 0 0 36px; border: 0; border-right: 1px solid #aaa69a; border-left: 1px solid #aaa69a; border-radius: 0; background: transparent; color: #34352e; cursor: pointer; font-size: calc(18px * var(--type-scale)); line-height: 1; }
+.tabList { min-width: 0; max-width: calc(100% - 36px); flex: 0 1 auto; display: flex; align-items: stretch; overflow: visible; border-left: 1px solid #aaa69a; }
+.newTab { flex: 0 0 36px; border: 0; border-right: 1px solid #aaa69a; border-radius: 0; background: transparent; color: #34352e; cursor: pointer; font-size: calc(18px * var(--type-scale)); line-height: 1; }
 .newTab:hover { background: #ebe7dc; }
 .actions { margin-left: auto; display: flex; flex: 0 0 auto; align-items: center; gap: 6px; }
 .actions button { height: 36px; border: 1px solid #aaa69a; background: #f1eee5; display: inline-flex; align-items: center; justify-content: center; gap: 6px; font-size: var(--text-control); font-weight: 700; cursor: pointer; }
@@ -9,10 +9,14 @@
 .actions button:active:not(:disabled) { transform: translateY(1px); }
 .actions button:disabled { opacity: .35; cursor: default; }
 .iconButton { width: 36px; padding: 0; }
+.filesButton { padding: 0 10px; }
 .iconButton svg { width: 18px; height: 18px; }
 .agentButton { margin-left: 6px; padding: 0 12px; }
+.agentButtonTooltip { position: relative; display: inline-flex; }
+.agentButtonTooltip::after { content: attr(data-tooltip); position: absolute; z-index: 20; right: 0; top: calc(100% + 8px); width: max-content; padding: 6px 8px; background: var(--ink); color: white; box-shadow: 2px 2px 0 rgba(23,24,18,.22); font: 700 var(--text-micro)/1 DM Mono, monospace; opacity: 0; pointer-events: none; transform: translateY(-3px); transition: opacity .15s ease, transform .15s ease; }
+.agentButtonTooltip:hover::after, .agentButtonTooltip:focus-within::after { opacity: 1; transform: translateY(0); }
 .agentButton svg, .exportButton svg { width: 18px; height: 18px; }
 .exportButton { padding: 0 12px; color: white; background: var(--ink) !important; border-color: var(--ink) !important; }
 .exportButton:hover:not(:disabled) { color: white; background: #34352e !important; border-color: #34352e !important; }
 @media (max-width: 850px) { .topbar { gap: 9px; } .agentButton { display: none !important; } }
-@media (max-width: 580px) { .topbar { gap: 6px; padding: 0 9px; } .iconButton { display: none !important; } .exportButton { width: 36px; padding: 0; font-size: 0 !important; } }
+@media (max-width: 580px) { .topbar { gap: 6px; padding: 0 9px; } .iconButton, .filesButton { display: none !important; } .exportButton { width: 36px; padding: 0; font-size: 0 !important; } }

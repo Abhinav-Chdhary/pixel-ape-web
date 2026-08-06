@@ -21,6 +21,7 @@
     "vite": "^8.1.5"
   },
   "dependencies": {
+    "framer-motion": "^13.0.0",
     "react": "^19.2.8",
     "react-dom": "^19.2.3"
   }

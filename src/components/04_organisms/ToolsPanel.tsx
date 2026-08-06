@@ -1,4 +1,4 @@
-import { EraserIcon, EyedropperIcon, FillIcon, LineIcon, PencilIcon, TrashIcon } from '../../icons'
+import { EraserIcon, EyedropperIcon, FillIcon, LineIcon, MoveIcon, PencilIcon, TrashIcon } from '../../icons'
 import type { LineMode, Tool } from '../../types'
 import { ToolButton } from '../02_molecules/ToolButton'
 import styles from './ToolsPanel.module.css'
@@ -27,6 +27,7 @@ export function ToolsPanel({ colorsUsed, spriteCount, spriteIndex, tool, lineMod
       <ToolButton activeTool={tool} tool="eyedropper" hotkey="I" icon={<EyedropperIcon />} label="Eyedropper" onSelect={onToolChange} />
       <ToolButton activeTool={tool} tool="line" hotkey="L" icon={<LineIcon />} label="Line" onSelect={onToolChange} />
       {tool === 'line' && <div className={styles.lineModes} role="group" aria-label="Line mode"><button className={lineMode === 'straight' ? styles.selectedMode : ''} onClick={() => onLineModeChange('straight')}>Straight</button><button className={lineMode === 'curve' ? styles.selectedMode : ''} onClick={() => onLineModeChange('curve')}>Curve</button></div>}
+      <ToolButton activeTool={tool} tool="move" hotkey="M" icon={<MoveIcon />} label="Move pixels" onSelect={onToolChange} />
     </div>
     <div className={styles.separator} />
     <button className={styles.clearButton} onClick={onClear}><TrashIcon /> Clear canvas</button>

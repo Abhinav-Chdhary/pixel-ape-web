@@ -79,8 +79,8 @@ export function resizeProject(project: PixelProject, width: number, height: numb
 }
 
 function clampSize(value: unknown) {
-  const numeric = typeof value === 'number' ? Math.round(value) : 24
-  return Math.max(4, Math.min(64, numeric))
+  const numeric = typeof value === 'number' && Number.isFinite(value) ? Math.round(value) : 32
+  return Math.max(4, Math.min(512, numeric))
 }
 
 function createId() {

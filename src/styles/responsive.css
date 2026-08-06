@@ -1,0 +1,7 @@
+@media (max-width: 850px) {
+  body { overflow: auto; }
+}
+@media (max-width: 580px) {
+  .canvas-area { min-height: 600px; }
+}
+@media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto !important; } }

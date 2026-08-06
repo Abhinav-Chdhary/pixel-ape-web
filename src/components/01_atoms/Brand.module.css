@@ -1,0 +1,9 @@
+.brand { display: flex; align-items: center; gap: 9px; font-size: var(--text-control); font-weight: 800; letter-spacing: .13em; }
+.mark { width: 21px; height: 21px; display: grid; grid-template-columns: repeat(2, 1fr); gap: 3px; transform: rotate(45deg); padding: 3px; background: var(--ink); }
+.mark i { display: block; background: var(--signal); }
+.mark i:nth-child(2), .mark i:nth-child(3) { background: var(--paper); }
+
+@media (max-width: 580px) {
+  .brand { gap: 6px; font-size: var(--text-micro); }
+  .mark { width: 18px; height: 18px; }
+}

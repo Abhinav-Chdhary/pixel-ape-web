@@ -1,0 +1,234 @@
+.dialog-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 10;
+  display: grid;
+  place-items: center;
+  background: rgba(23, 24, 18, 0.56);
+  padding: 20px;
+}
+.agent-dialog {
+  width: min(600px, 100%);
+  background: var(--paper);
+  border: 1px solid var(--ink);
+  box-shadow: 8px 8px 0 var(--signal);
+  padding: 28px;
+  position: relative;
+}
+.dialog-icon {
+  width: 40px;
+  height: 40px;
+  display: grid;
+  place-items: center;
+  color: white;
+  background: var(--ink);
+  float: right;
+}
+.eyebrow {
+  margin: 0 0 8px;
+  color: var(--signal);
+  font:
+    500 var(--text-meta) DM Mono,
+    monospace;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+.agent-dialog h2 {
+  margin: 0 50px 12px 0;
+  font-size: var(--text-heading);
+  line-height: 1.1;
+  letter-spacing: -0.04em;
+}
+.agent-dialog > p:not(.eyebrow) {
+  font-size: var(--text-body);
+  line-height: 1.65;
+  color: #5d5b54;
+}
+.agent-dialog code {
+  font-family:
+    DM Mono,
+    monospace;
+  font-size: 0.9em;
+}
+.agent-dialog pre {
+  white-space: pre-wrap;
+  margin: 0;
+  padding: 14px 52px 14px 14px;
+  font:
+    500 var(--text-body)/1.55 DM Mono,
+    monospace;
+}
+.agent-prompt-card {
+  position: relative;
+  margin-top: 18px;
+  background: #dfdbd0;
+  border-left: 3px solid var(--signal);
+}
+.agent-prompt-copy {
+  position: absolute;
+  top: 9px;
+  right: 9px;
+  width: 32px;
+  height: 32px;
+  border: 1px solid var(--ink);
+  background: var(--paper);
+  color: var(--ink);
+  display: grid;
+  place-items: center;
+  padding: 0;
+  cursor: pointer;
+}
+.agent-prompt-copy:hover {
+  background: white;
+}
+.agent-prompt-copy:focus-visible {
+  outline: 2px solid var(--signal);
+  outline-offset: 2px;
+}
+.agent-prompt-copy svg {
+  width: 16px;
+  height: 16px;
+}
+.agent-prompt-status {
+  position: absolute;
+  top: 9px;
+  right: 49px;
+  z-index: 1;
+  margin: 0;
+  padding: 7px 9px;
+  background: var(--paper);
+  box-shadow: 2px 2px 0 rgba(23, 24, 18, 0.22);
+  color: #5d5b54;
+  font-size: var(--text-micro);
+  line-height: 18px;
+  pointer-events: none;
+}
+.dialog-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 24px;
+}
+.dialog-actions a {
+  color: var(--ink);
+  font-size: var(--text-control);
+  font-weight: 700;
+}
+.dialog-actions button {
+  border: 1px solid var(--ink);
+  background: var(--ink);
+  color: white;
+  padding: 9px 18px;
+  font-size: var(--text-control);
+  font-weight: 700;
+  cursor: pointer;
+}
+.new-sprite-dialog {
+  width: min(390px, 100%);
+  background: var(--paper);
+  border: 1px solid var(--ink);
+  box-shadow: 8px 8px 0 var(--signal);
+  padding: 28px;
+}
+.new-sprite-dialog h2 {
+  margin: 0 0 20px;
+  font-size: var(--text-heading);
+  line-height: 1.1;
+  letter-spacing: -0.04em;
+}
+.new-sprite-dialog > label,
+.dialog-grid > label {
+  display: grid;
+  gap: 6px;
+  font-size: var(--text-control);
+  font-weight: 800;
+}
+.new-sprite-dialog > label > input {
+  height: 34px;
+  border: 1px solid #8f8b80;
+  background: white;
+  padding: 0 8px;
+  font-size: var(--text-body);
+}
+.dialog-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin-top: 14px;
+}
+.dialog-grid input {
+  height: 34px;
+  border: 1px solid #8f8b80;
+  background: white;
+  padding: 0 7px;
+  font-size: var(--text-control);
+}
+.new-sprite-dialog fieldset {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 7px;
+  margin: 18px 0 0;
+  padding: 10px;
+  border: 1px solid #aaa69a;
+}
+.new-sprite-dialog legend {
+  padding: 0 4px;
+  font-size: var(--text-micro);
+  font-weight: 800;
+  text-transform: uppercase;
+}
+.background-choice {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: var(--text-micro);
+}
+.background-choice input {
+  margin: 0;
+  accent-color: var(--signal);
+}
+.quiet-button {
+  color: var(--ink) !important;
+  background: transparent !important;
+}
+.file-status {
+  position: fixed;
+  z-index: 7;
+  right: 12px;
+  bottom: 12px;
+  padding: 6px 9px;
+  border: 1px solid #8f8b80;
+  background: var(--paper);
+  box-shadow: 2px 2px 0 rgba(23, 24, 18, .18);
+  font: 700 var(--text-micro)/1.2 DM Mono, monospace;
+  text-transform: uppercase;
+  letter-spacing: .05em;
+}
+.file-status-conflict,
+.file-status-invalid,
+.file-status-offline { color: #a1271e; border-color: #a1271e; }
+.file-status-saving,
+.file-status-unsaved { color: #765b00; border-color: #9b7b0c; }
+.file-blocker {
+  position: fixed;
+  inset: 64px 0 0;
+  z-index: 8;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(23, 24, 18, .72);
+}
+.file-blocker section,
+.conflict-dialog {
+  width: min(620px, 100%);
+  padding: 28px;
+  border: 1px solid var(--ink);
+  background: var(--paper);
+  box-shadow: 8px 8px 0 var(--signal);
+}
+.file-blocker h2,
+.conflict-dialog h2 { margin: 0 0 14px; font-size: var(--text-heading); line-height: 1.15; }
+.file-blocker p,
+.conflict-dialog p { color: #5d5b54; font-size: var(--text-body); line-height: 1.5; }
+.file-blocker code { font: 500 var(--text-micro)/1.4 DM Mono, monospace; overflow-wrap: anywhere; }
+.conflict-actions { justify-content: flex-end; gap: 8px; }

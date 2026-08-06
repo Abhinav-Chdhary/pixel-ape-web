@@ -1,0 +1,7 @@
+.button { border: 1px solid transparent; background: transparent; min-height: 45px; display: flex; align-items: center; gap: 6px; padding: 6px; cursor: pointer; text-align: left; }
+.button:hover { background: #f1eee5; border-color: #b5b1a6; }
+.active { color: white; background: var(--ink); border-color: var(--ink); }
+.button.active:hover { color: white; background: var(--ink); border-color: var(--ink); }
+.button > span { flex: 1; display: flex; align-items: center; justify-content: space-between; font-size: var(--text-control); font-weight: 700; }
+.button svg { flex: 0 0 auto; width: 18px; height: 18px; }
+.hotkey { padding: 3px 6px; border: 1px solid currentColor; opacity: .55; font: 500 var(--text-micro) DM Mono, monospace; }

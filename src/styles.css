@@ -1,0 +1,11 @@
+/*
+ * Application stylesheet entry point.
+ *
+ * Each imported file owns one visual region. Keep selectors scoped to that
+ * region's root class so styles remain predictable without a UI library.
+ */
+@import './styles/tokens.css';
+@import './styles/base.css';
+@import './styles/canvas.css';
+@import './styles/dialogs.css';
+@import './styles/responsive.css';

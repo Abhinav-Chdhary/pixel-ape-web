@@ -1,0 +1,9 @@
+* { box-sizing: border-box; scrollbar-color: var(--ink) var(--paper); scrollbar-width: thin; }
+*::-webkit-scrollbar { width: 10px; height: 10px; }
+*::-webkit-scrollbar-track { background: var(--paper); }
+*::-webkit-scrollbar-thumb { border: 2px solid var(--paper); background: var(--ink); }
+*::-webkit-scrollbar-thumb:hover { background: var(--signal); }
+body { margin: 0; min-width: 320px; min-height: 100vh; overflow: hidden; font-size: var(--text-body); }
+button, input { font: inherit; }
+button { color: inherit; }
+button:focus-visible, input:focus-visible, canvas:focus-visible { outline: 2px solid #3b6ef5; outline-offset: 2px; }

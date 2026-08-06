@@ -1,0 +1,23 @@
+@import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Manrope:wght@500;600;700;800&display=swap');
+
+:root {
+  font-family: Manrope, Arial, sans-serif;
+  color: #171812;
+  background: #c9c5ba;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  --ink: #171812;
+  --paper: #f4f1e8;
+  --chrome: #d8d3c5;
+  --line: #aaa69a;
+  --signal: #ff5c35;
+  --type-scale: 1;
+  /* Three-pixel visual rhythm; borders and pixel-grid lines remain one pixel. */
+  --text-micro: calc(12px * var(--type-scale));
+  --text-meta: calc(12px * var(--type-scale));
+  --text-control: calc(12px * var(--type-scale));
+  --text-body: calc(15px * var(--type-scale));
+  --text-title: calc(15px * var(--type-scale));
+  --text-icon: calc(18px * var(--type-scale));
+  --text-heading: calc(24px * var(--type-scale));
+}

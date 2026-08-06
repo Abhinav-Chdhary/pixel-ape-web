@@ -1,0 +1,17 @@
+import type { SVGProps } from 'react'
+
+type Props = SVGProps<SVGSVGElement>
+const base = { width: 20, height: 20, viewBox: '0 0 24 24', fill: 'currentColor', 'aria-hidden': true }
+
+export const PencilIcon = (props: Props) => <svg {...base} {...props}><path d="M3 21v-4.25L16.2 3.575q.3-.275.663-.425t.762-.15t.775.15t.65.45L20.425 5q.3.275.438.65T21 6.4q0 .4-.137.763t-.438.662L7.25 21zM17.6 7.8 19 6.4 17.6 5l-1.4 1.4z" /></svg>
+export const FillIcon = (props: Props) => <svg {...base} {...props}><path d="M6.175 1.4 7.6 0l8.575 8.575q.575.575.575 1.425t-.575 1.425l-4.75 4.75q-.575.575-1.425.575t-1.425-.575l-4.75-4.75Q3.25 10.85 3.25 10t.575-1.425L8.575 3.8zM10 5.225 5.225 10h9.55zm7.588 11.188Q17 15.825 17 15q0-.525.313-1.125T18 12.75q.225-.3.475-.625T19 11.5q.275.3.525.625t.475.625q.375.525.688 1.125T21 15q0 .825-.587 1.413T19 17t-1.412-.587M2 24v-4h20v4z" /></svg>
+export const EraserIcon = (props: Props) => <svg {...base} {...props}><path d="M17.25 18H22v2h-6.75zm-12.5 2-2.125-2.125q-.575-.575-.587-1.425T2.6 15l11-11.4q.575-.6 1.413-.6t1.412.575L21.4 8.55q.575.575.575 1.425T21.4 11.4L13 20z" /></svg>
+export const EyedropperIcon = (props: Props) => <svg {...base} {...props}><path d="M3 21v-4.75l8.95-8.95-1.45-1.4 1.45-1.4 1.9 1.9 3.1-3.1q.125-.125.313-.2t.387-.075t.375.075t.325.2l2.35 2.35q.125.15.2.325t.075.375t-.075.387t-.2.313l-3.075 3.075 1.9 1.95L18.1 13.5l-1.4-1.45L7.75 21zm2-2h1.95l8.3-8.35-1.9-1.9L5 17.05z" /></svg>
+export const LineIcon = (props: Props) => <svg {...base} {...props}><path d="M4 13v-2h16v2z" /></svg>
+export const OpenInFullIcon = (props: Props) => <svg {...base} {...props}><path d="M3 21v-8h2v4.6L17.6 5H13V3h8v8h-2V6.4L6.4 19H11v2z" /></svg>
+export const UndoIcon = (props: Props) => <svg {...base} {...props}><path d="M7 19v-2h7.1q1.575 0 2.738-1T18 13.5T16.838 11T14.1 10H7.8l2.6 2.6L9 14 4 9l5-5 1.4 1.4L7.8 8h6.3q2.425 0 4.163 1.575T20 13.5t-1.737 3.925T14.1 19z" /></svg>
+export const RedoIcon = (props: Props) => <svg {...base} {...props}><path d="M9.9 19q-2.425 0-4.163-1.575T4 13.5t1.738-3.925T9.9 8h6.3l-2.6-2.6L15 4l5 5-5 5-1.4-1.4 2.6-2.6H9.9q-1.575 0-2.738 1T6 13.5T7.163 16T9.9 17H17v2z" /></svg>
+export const DownloadIcon = (props: Props) => <svg {...base} {...props}><path d="m12 16-5-5 1.4-1.45 2.6 2.6V4h2v8.15l2.6-2.6L17 11zm-6 4q-.825 0-1.412-.587T4 18v-3h2v3h12v-3h2v3q0 .825-.587 1.413T18 20z" /></svg>
+export const CopyIcon = (props: Props) => <svg {...base} {...props}><path d="M19 21H8q-.825 0-1.412-.587T6 19V8h2v11h11zM19 3q.825 0 1.413.588T21 5v10q0 .825-.587 1.413T19 17H11q-.825 0-1.412-.587T9 15V5q0-.825.588-1.412T11 3zm0 12V5H11v10z" /></svg>
+export const TrashIcon = (props: Props) => <svg {...base} {...props}><path d="M7 21q-.825 0-1.412-.587T5 19V6H4V4h5V3h6v1h5v2h-1v13q0 .825-.587 1.413T17 21zm2-4h2V8H9zm4 0h2V8h-2z" /></svg>
+export const AgentIcon = (props: Props) => <svg {...base} {...props}><path d="M4 15q-1.25 0-2.125-.875T1 12t.875-2.125T4 9V7q0-.825.588-1.412T6 5h3q0-1.25.875-2.125T12 2t2.125.875T15 5h3q.825 0 1.413.588T20 7v2q1.25 0 2.125.875T23 12t-.875 2.125T20 15v4q0 .825-.587 1.413T18 21H6q-.825 0-1.412-.587T4 19zm6.063-2.437q.437-.438.437-1.063t-.437-1.062T9 10t-1.062.438T7.5 11.5t.438 1.063T9 13t1.063-.437m6 0q.437-.438.437-1.063t-.437-1.062T15 10t-1.062.438T13.5 11.5t.438 1.063T15 13t1.063-.437M8 17h8v-2H8z" /></svg>

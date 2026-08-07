@@ -12,6 +12,8 @@ type SpriteRow = { id: string; position: number; name: string; format_version: n
 
 const storageKey = 'pixel-ape-web:workspace'
 const cloudProjectKey = 'pixel-ape-web:cloud-project'
+const cloudRevisionKey = 'pixel-ape-web:cloud-revision'
+const cloudDirtyKey = 'pixel-ape-web:cloud-dirty'
 
 function readLocalWorkspace(key = storageKey) {
   try {
@@ -33,9 +35,14 @@ export function useWorkspace(user: User | null, onExternalSpriteChange?: (id: st
   const workspaceRef = useRef(workspace)
   const skipSaveRef = useRef(true)
   const pausedRef = useRef(false)
+  const loadedOwnerRef = useRef<string | null>('guest')
+  const hydrationRef = useRef<{ owner: string; promise: ReturnType<typeof hydrateCloud> } | null>(null)
+  const mutationGenerationRef = useRef(0)
   workspaceRef.current = workspace
 
   useEffect(() => {
+    const owner = user?.id ?? 'guest'
+    if (loadedOwnerRef.current !== owner) return
     const key = user ? `${storageKey}:${user.id}` : storageKey
     globalThis.localStorage?.setItem(key, JSON.stringify(workspace))
   }, [user, workspace])
@@ -43,30 +50,58 @@ export function useWorkspace(user: User | null, onExternalSpriteChange?: (id: st
   useEffect(() => {
     let active = true
     setConflict(null)
+    const owner = user?.id ?? 'guest'
+    loadedOwnerRef.current = null
     if (!user || !supabase) {
       projectIdRef.current = null
       revisionRef.current = 0
       setCloudReady(false)
       setStatus('saved')
-      setWorkspace(readLocalWorkspace())
+      const guestWorkspace = readLocalWorkspace()
+      loadedOwnerRef.current = 'guest'
+      setWorkspace(guestWorkspace)
+      hydrationRef.current = null
       return
     }
     setStatus('loading')
     skipSaveRef.current = true
-    void hydrateCloud(user, workspaceRef.current).then((result) => {
+    const userStorageKey = `${storageKey}:${user.id}`
+    const savedUserWorkspace = globalThis.localStorage?.getItem(userStorageKey)
+    const local = savedUserWorkspace ? readLocalWorkspace(userStorageKey) : ensureCloudIds(workspaceRef.current)
+    const storedRevision = Number(globalThis.localStorage?.getItem(`${cloudRevisionKey}:${user.id}`)) || 0
+    const hasDirtyDraft = globalThis.localStorage?.getItem(`${cloudDirtyKey}:${user.id}`) === 'true'
+    const hydration = hydrationRef.current?.owner === owner
+      ? hydrationRef.current.promise
+      : hydrateCloud(user, local)
+    hydrationRef.current = { owner, promise: hydration }
+    void hydration.then((result) => {
       if (!active) return
       projectIdRef.current = result.projectId
       revisionRef.current = result.revision
       globalThis.localStorage?.setItem(cloudProjectKey, result.projectId)
-      if (result.workspace) {
-        setWorkspace(result.workspace)
-        onExternalSpriteChange?.(result.workspace.activeSpriteId)
-      }
+      const hasOfflineDraft = Boolean(savedUserWorkspace && hasDirtyDraft && storedRevision === result.revision && result.workspace)
+      const hasDivergedDraft = Boolean(savedUserWorkspace && hasDirtyDraft && storedRevision !== result.revision && result.workspace)
+      const nextWorkspace = ensureCloudIds(hasOfflineDraft || hasDivergedDraft || !result.workspace ? local : result.workspace)
+      loadedOwnerRef.current = owner
+      setWorkspace(nextWorkspace)
+      onExternalSpriteChange?.(nextWorkspace.activeSpriteId)
       setCloudReady(true)
+      if (hasDivergedDraft) {
+        setConflict({ resource: 'manifest' })
+        setStatus('conflict')
+        return
+      }
+      globalThis.localStorage?.setItem(`${cloudRevisionKey}:${user.id}`, String(result.revision))
+      if (!hasOfflineDraft) globalThis.localStorage?.setItem(`${cloudDirtyKey}:${user.id}`, 'false')
       setStatus('saved')
-      window.setTimeout(() => { skipSaveRef.current = false }, 0)
+      window.setTimeout(() => {
+        skipSaveRef.current = false
+        if (hasOfflineDraft) setWorkspace((current) => ({ ...current }))
+      }, 0)
     }).catch(() => {
       if (!active) return
+      loadedOwnerRef.current = owner
+      setWorkspace(local)
       setCloudReady(false)
       setStatus('offline')
     })
@@ -78,13 +113,20 @@ export function useWorkspace(user: User | null, onExternalSpriteChange?: (id: st
     setStatus('unsaved')
     const timer = window.setTimeout(() => {
       const snapshot = workspaceRef.current
+      const snapshotGeneration = mutationGenerationRef.current
       const projectId = projectIdRef.current
       if (!projectId) return
       setStatus('saving')
       saveSequenceRef.current = saveSequenceRef.current.then(async () => {
-        const nextRevision = await saveCloudWorkspace(user.id, projectId, snapshot, revisionRef.current)
+        const nextRevision = await saveCloudWorkspace(projectId, snapshot, revisionRef.current)
         revisionRef.current = nextRevision
-        setStatus('saved')
+        globalThis.localStorage?.setItem(`${cloudRevisionKey}:${user.id}`, String(nextRevision))
+        if (mutationGenerationRef.current === snapshotGeneration) {
+          globalThis.localStorage?.setItem(`${cloudDirtyKey}:${user.id}`, 'false')
+          setStatus('saved')
+        } else {
+          setStatus('unsaved')
+        }
       }).catch((error: unknown) => {
         if (error instanceof CloudConflictError) {
           setConflict({ resource: 'manifest' })
@@ -95,8 +137,15 @@ export function useWorkspace(user: User | null, onExternalSpriteChange?: (id: st
     return () => window.clearTimeout(timer)
   }, [cloudReady, conflict, user, workspace])
 
-  const updateManifest = useCallback((update: (current: PixelWorkspace) => PixelWorkspace) => setWorkspace(update), [])
+  const markDirty = useCallback(() => {
+    mutationGenerationRef.current += 1
+    if (user && loadedOwnerRef.current === user.id) globalThis.localStorage?.setItem(`${cloudDirtyKey}:${user.id}`, 'true')
+  }, [user])
+  const updateManifest = useCallback((update: (current: PixelWorkspace) => PixelWorkspace) => {
+    markDirty(); setWorkspace(update)
+  }, [markDirty])
   const updateSprite = useCallback((id: string, update: (current: PixelProject & { id: string }) => PixelProject) => {
+    markDirty()
     setWorkspace((current) => {
       const sprite = current.sprites.find((item) => item.id === id)
       if (!sprite) return current
@@ -104,12 +153,13 @@ export function useWorkspace(user: User | null, onExternalSpriteChange?: (id: st
       if (next === sprite) return current
       return { ...current, sprites: current.sprites.map((item) => item.id === id ? { ...next, id } : item) }
     })
-  }, [])
+  }, [markDirty])
   const createSprite = useCallback(async (project: PixelProject) => {
+    markDirty()
     const id = globalThis.crypto?.randomUUID?.() ?? Math.random().toString(36).slice(2)
     setWorkspace((current) => ({ ...current, activeSpriteId: id, sprites: [...current.sprites, { ...project, id }] }))
     return true
-  }, [])
+  }, [markDirty])
   const resolveConflict = useCallback(async (_resource: string, resolution: 'disk' | 'retry') => {
     if (!user || !supabase) return
     setConflict(null); setStatus('loading')
@@ -117,10 +167,13 @@ export function useWorkspace(user: User | null, onExternalSpriteChange?: (id: st
       const result = await hydrateCloud(user, workspaceRef.current, projectIdRef.current)
       projectIdRef.current = result.projectId; revisionRef.current = result.revision
       if (result.workspace) setWorkspace(result.workspace)
+      globalThis.localStorage?.setItem(`${cloudRevisionKey}:${user.id}`, String(result.revision))
+      globalThis.localStorage?.setItem(`${cloudDirtyKey}:${user.id}`, 'false')
     } else {
       const { data, error } = await supabase.from('projects').select('revision').eq('id', projectIdRef.current!).single()
       if (error) throw error
       revisionRef.current = data.revision
+      globalThis.localStorage?.setItem(`${cloudDirtyKey}:${user.id}`, 'true')
       skipSaveRef.current = false
       setWorkspace((current) => ({ ...current }))
     }
@@ -157,12 +210,17 @@ async function hydrateCloud(user: User, local: PixelWorkspace, requestedProjectI
     data = fallback.data
   }
   if (!data) {
+    const cloudLocal = ensureCloudIds(local)
     const projectId = crypto.randomUUID()
-    const { error: createError } = await supabase.from('projects').insert({ id: projectId, owner_id: user.id, name: local.sprites[0]?.name || 'My pixel art', active_sprite_id: local.activeSpriteId, palette: local.palette })
+    const { data: revision, error: createError } = await supabase.rpc('create_workspace', {
+      p_project_id: projectId,
+      p_name: cloudLocal.sprites[0]?.name || 'My pixel art',
+      p_active_sprite_id: cloudLocal.activeSpriteId,
+      p_palette: cloudLocal.palette,
+      p_sprites: spriteRows(projectId, cloudLocal).map(({ project_id: _projectId, ...sprite }) => sprite),
+    })
     if (createError) throw createError
-    const { error: spriteError } = await supabase.from('sprites').insert(spriteRows(projectId, local))
-    if (spriteError) throw spriteError
-    return { projectId, revision: 1, workspace: null as PixelWorkspace | null }
+    return { projectId, revision: Number(revision) || 1, workspace: null as PixelWorkspace | null }
   }
   const { data: sprites, error: spriteError } = await supabase.from('sprites').select('id,position,name,format_version,width,height,background,pixels').eq('project_id', data.id).order('position').returns<SpriteRow[]>()
   if (spriteError) throw spriteError
@@ -176,23 +234,20 @@ async function hydrateCloud(user: User, local: PixelWorkspace, requestedProjectI
   return { projectId: data.id, revision: data.revision, workspace }
 }
 
-async function saveCloudWorkspace(userId: string, projectId: string, workspace: PixelWorkspace, expectedRevision: number) {
+async function saveCloudWorkspace(projectId: string, workspace: PixelWorkspace, expectedRevision: number) {
   if (!supabase) throw new Error('Supabase is not configured')
-  const { data, error } = await supabase.from('projects').update({
-    name: workspace.sprites[0]?.name || 'My pixel art', active_sprite_id: workspace.activeSpriteId,
-    palette: workspace.palette, revision: expectedRevision + 1,
-  }).eq('id', projectId).eq('owner_id', userId).eq('revision', expectedRevision).select('revision').maybeSingle()
+  const cloudWorkspace = ensureCloudIds(workspace)
+  const { data, error } = await supabase.rpc('save_workspace', {
+    p_project_id: projectId,
+    p_expected_revision: expectedRevision,
+    p_name: cloudWorkspace.sprites[0]?.name || 'My pixel art',
+    p_active_sprite_id: cloudWorkspace.activeSpriteId,
+    p_palette: cloudWorkspace.palette,
+    p_sprites: spriteRows(projectId, cloudWorkspace).map(({ project_id: _projectId, ...sprite }) => sprite),
+  })
+  if (error?.code === '40001') throw new CloudConflictError()
   if (error) throw error
-  if (!data) throw new CloudConflictError()
-  const rows = spriteRows(projectId, workspace)
-  const { error: upsertError } = await supabase.from('sprites').upsert(rows, { onConflict: 'id' })
-  if (upsertError) throw upsertError
-  const ids = workspace.sprites.map((sprite) => sprite.id)
-  let deleteQuery = supabase.from('sprites').delete().eq('project_id', projectId)
-  if (ids.length) deleteQuery = deleteQuery.not('id', 'in', `(${ids.map((id) => `"${id}"`).join(',')})`)
-  const { error: deleteError } = await deleteQuery
-  if (deleteError) throw deleteError
-  return data.revision as number
+  return Number(data)
 }
 
 function spriteRows(projectId: string, workspace: PixelWorkspace) {
@@ -203,3 +258,23 @@ function spriteRows(projectId: string, workspace: PixelWorkspace) {
 }
 
 class CloudConflictError extends Error {}
+
+function ensureCloudIds(workspace: PixelWorkspace) {
+  const ids = new Set<string>()
+  const replacements = new Map<string, string>()
+  const sprites = workspace.sprites.map((sprite) => {
+    let id = sprite.id
+    if (!isUuid(id) || ids.has(id)) {
+      id = crypto.randomUUID()
+      if (!replacements.has(sprite.id)) replacements.set(sprite.id, id)
+    }
+    ids.add(id)
+    return { ...sprite, id }
+  })
+  const activeSpriteId = replacements.get(workspace.activeSpriteId) ?? (ids.has(workspace.activeSpriteId) ? workspace.activeSpriteId : sprites[0].id)
+  return { ...workspace, activeSpriteId, sprites }
+}
+
+function isUuid(value: string) {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value)
+}

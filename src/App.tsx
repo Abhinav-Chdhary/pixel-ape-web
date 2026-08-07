@@ -26,9 +26,10 @@ function App() {
   const [history, setHistory] = useState<PixelProject[]>([])
   const [future, setFuture] = useState<PixelProject[]>([])
   const activeSpriteIdRef = useRef('')
-  const sync = useWorkspace(auth.user, (id) => {
+  const handleExternalSpriteChange = useCallback((id: string) => {
     if (id === activeSpriteIdRef.current) { setHistory([]); setFuture([]) }
-  })
+  }, [])
+  const sync = useWorkspace(auth.user, handleExternalSpriteChange)
   const { workspace, hydrated, writable, diagnostics, status: fileStatus, conflict, updateManifest, updateSprite, createSprite: persistNewSprite, resolveConflict, copyConflictDraft, exportConflictDraft, setReconciliationPaused } = sync
   const [tool, setTool] = useState<Tool>('pencil')
   const [eraserSize, setEraserSize] = useState(() => Number(globalThis.localStorage?.getItem('pixel-ape:eraser-size')) || 1)

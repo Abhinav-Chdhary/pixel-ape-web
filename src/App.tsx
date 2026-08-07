@@ -30,11 +30,11 @@ function App() {
   const [eraserSize, setEraserSize] = useState(() => Number(globalThis.localStorage?.getItem('pixel-ape:eraser-size')) || 1)
   const [canvasHovered, setCanvasHovered] = useState(false)
   const [eyedropperColor, setEyedropperColor] = useState<string | null>(null)
-  const [editingPaletteSlot, setEditingPaletteSlot] = useState<number | null>(null)
+  const [editingPaletteSlot, setEditingPaletteSlot] = useState<number | null>(0)
   const [lineMode, setLineMode] = useState<LineMode>(() => globalThis.localStorage?.getItem('pixel-ape:line-mode') === 'curve' ? 'curve' : 'straight')
   const [curveStage, setCurveStage] = useState<{ start: { x: number; y: number }; end: { x: number; y: number } } | null>(null)
   const [linePreview, setLinePreview] = useState<{ start: { x: number; y: number }; end: { x: number; y: number } } | null>(null)
-  const [color, setColor] = useState(DEFAULT_PALETTE[0])
+  const [color, setColor] = useState<string | null>(DEFAULT_PALETTE[0])
   const [cursor, setCursor] = useState({ x: 0, y: 0 })
   const [zoomBySprite, setZoomBySprite] = useState<Record<string, number>>({})
   const [gridVisible, setGridVisible] = useState(true)
@@ -193,16 +193,16 @@ function App() {
       ? previewMovedPixels(project.width, selectionMoveOriginRef.current, selection, selectionPixelsRef.current)
       : project.pixels
     visiblePixels.forEach((pixel, index) => { if (pixel) { ctx.fillStyle = pixel; ctx.fillRect((index % project.width) * scale, Math.floor(index / project.width) * scale, scale, scale) } })
-    const previewPixels = tool === 'line' && linePreview
+    const previewPixels = tool === 'line' && linePreview && color
       ? drawLinePixels(Array<string | null>(project.width * project.height).fill(null), project.width, project.height, linePreview.start, linePreview.end, color)
-      : tool === 'line' && curveStage
+      : tool === 'line' && curveStage && color
         ? drawCurvePixels(Array<string | null>(project.width * project.height).fill(null), project.width, project.height, curveStage.start, cursor, curveStage.end, color)
         : null
     if (previewPixels) previewPixels.forEach((pixel, index) => { if (pixel) { ctx.fillStyle = pixel; ctx.fillRect((index % project.width) * scale, Math.floor(index / project.width) * scale, scale, scale) } })
     if (gridVisible) {
       ctx.beginPath(); ctx.strokeStyle = project.background === 'black' ? 'rgba(255,255,255,.13)' : 'rgba(23,24,18,.13)'; ctx.lineWidth = 1
-      for (let i = 0; i <= project.width; i++) { const point = Math.round(i * scale) + .5; ctx.moveTo(point, 0); ctx.lineTo(point, canvas.height) }
-      for (let i = 0; i <= project.height; i++) { const point = Math.round(i * scale) + .5; ctx.moveTo(0, point); ctx.lineTo(canvas.width, point) }
+      for (let i = 1; i < project.width; i++) { const point = Math.round(i * scale) + .5; ctx.moveTo(point, 0); ctx.lineTo(point, canvas.height) }
+      for (let i = 1; i < project.height; i++) { const point = Math.round(i * scale) + .5; ctx.moveTo(0, point); ctx.lineTo(canvas.width, point) }
       ctx.stroke()
     }
     if (tool === 'move' && selection) {
@@ -239,8 +239,8 @@ function App() {
     ctx.drawImage(referenceImage, (canvas.width - width) / 2, (canvas.height - height) / 2, width, height)
     if (gridVisible) {
       ctx.beginPath(); ctx.strokeStyle = 'rgba(23,24,18,.35)'; ctx.lineWidth = 1
-      for (let i = 0; i <= project.width; i++) { const point = Math.round(i * scale) + .5; ctx.moveTo(point, 0); ctx.lineTo(point, canvas.height) }
-      for (let i = 0; i <= project.height; i++) { const point = Math.round(i * scale) + .5; ctx.moveTo(0, point); ctx.lineTo(canvas.width, point) }
+      for (let i = 1; i < project.width; i++) { const point = Math.round(i * scale) + .5; ctx.moveTo(point, 0); ctx.lineTo(point, canvas.height) }
+      for (let i = 1; i < project.height; i++) { const point = Math.round(i * scale) + .5; ctx.moveTo(0, point); ctx.lineTo(canvas.width, point) }
       ctx.stroke()
     }
   }, [gridVisible, project.height, project.width, referenceImage])
@@ -250,15 +250,17 @@ function App() {
     return { x: Math.max(0, Math.min(project.width - 1, Math.floor((event.clientX - rect.left) / rect.width * project.width))), y: Math.max(0, Math.min(project.height - 1, Math.floor((event.clientY - rect.top) / rect.height * project.height))) }
   }
   const paintAt = (x: number, y: number, withHistory = true) => {
+    if (!color && tool !== 'eraser') return
+    const paintColor = color
     const index = y * project.width + x
     const updater = (current: PixelProject) => {
-      if (tool === 'fill') return { ...current, pixels: fillPixels(current.pixels, current.width, current.height, index, color) }
+      if (tool === 'fill' && paintColor) return { ...current, pixels: fillPixels(current.pixels, current.width, current.height, index, paintColor) }
       if (tool === 'eraser') {
         const pixels = erasePixels(current.pixels, current.width, current.height, { x, y }, eraserSize)
         return pixels === current.pixels ? current : { ...current, pixels }
       }
-      if (current.pixels[index] === color) return current
-      const pixels = [...current.pixels]; pixels[index] = color
+      if (current.pixels[index] === paintColor) return current
+      const pixels = [...current.pixels]; pixels[index] = paintColor
       return { ...current, pixels }
     }
     if (withHistory) commit(updater)
@@ -270,17 +272,19 @@ function App() {
   const paintStrokeTo = (point: { x: number; y: number }) => {
     const previous = strokePointRef.current
     if (!previous) return
+    if (tool !== 'eraser' && !color) return
+    const paintColor = color
     updateSprite(project.id, (current) => {
       const pixels = tool === 'eraser'
         ? eraseLinePixels(current.pixels, current.width, current.height, previous, point, eraserSize)
-        : drawLinePixels(current.pixels, current.width, current.height, previous, point, color)
+        : drawLinePixels(current.pixels, current.width, current.height, previous, point, paintColor!)
       return pixels === current.pixels ? current : { ...current, pixels }
     })
     strokePointRef.current = point
   }
   const pickColorAt = (x: number, y: number) => {
     const pixel = project.pixels[y * project.width + x]
-    if (pixel) { setColor(pixel); setEyedropperColor(pixel) }
+    if (pixel) { setColor(pixel); setEyedropperColor(pixel); setEditingPaletteSlot(null) }
   }
   const onPointerDown = (event: React.PointerEvent<HTMLCanvasElement>) => {
     const point = pointFromEvent(event)
@@ -299,6 +303,7 @@ function App() {
     }
     if (tool === 'eyedropper') { pickColorAt(point.x, point.y); return }
     if (tool === 'line') {
+      if (!color) return
       if (lineMode === 'curve' && curveStage) {
         commit((current) => ({ ...current, pixels: drawCurvePixels(current.pixels, current.width, current.height, curveStage.start, point, curveStage.end, color) }))
         setCurveStage(null)
@@ -311,6 +316,7 @@ function App() {
       event.currentTarget.setPointerCapture(event.pointerId)
       return
     }
+    if (!color && tool !== 'eraser') return
     drawingRef.current = true; strokePointRef.current = point; setReconciliationPaused(true); event.currentTarget.setPointerCapture(event.pointerId); paintAt(point.x, point.y)
   }
   const onPointerMove = (event: React.PointerEvent<HTMLCanvasElement>) => {
@@ -353,7 +359,7 @@ function App() {
       const start = lineStartRef.current
       const end = pointFromEvent(event)
       if (lineMode === 'curve') setCurveStage({ start, end })
-      else commit((current) => ({ ...current, pixels: drawLinePixels(current.pixels, current.width, current.height, start, end, color) }))
+      else if (color) commit((current) => ({ ...current, pixels: drawLinePixels(current.pixels, current.width, current.height, start, end, color) }))
       lineStartRef.current = null
       setLinePreview(null)
     }
@@ -475,6 +481,7 @@ function App() {
             return
           }
           setEditingPaletteSlot(index)
+          setColor(null)
         }}
         onSetSlot={(index, slotColor) => { setColor(slotColor); updateManifest((current) => ({ ...current, palette: current.palette.map((swatch, slotIndex) => slotIndex === index ? slotColor : swatch) })) }}
       />}

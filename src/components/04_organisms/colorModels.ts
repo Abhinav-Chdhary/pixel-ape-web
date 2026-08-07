@@ -22,8 +22,8 @@ type HslColor = { hue: number; saturation: number; lightness: number }
 
 export function parseColor(color: string | null): Color {
   if (!color || color === 'transparent') return { red: 0, green: 0, blue: 0, opacity: 0 }
-  const hex = color.match(/^#([0-9a-f]{6})$/i)
-  if (hex) return { red: Number.parseInt(hex[1].slice(0, 2), 16), green: Number.parseInt(hex[1].slice(2, 4), 16), blue: Number.parseInt(hex[1].slice(4, 6), 16), opacity: 100 }
+  const hex = parseHexColor(color)
+  if (hex) return hex
   const rgba = color.match(/^rgba?\((\d+),\s*(\d+),\s*(\d+)(?:,\s*([\d.]+))?\)$/)
   if (rgba) return { red: clamp(Number(rgba[1]), 0, 255), green: clamp(Number(rgba[2]), 0, 255), blue: clamp(Number(rgba[3]), 0, 255), opacity: clamp(Math.round(Number(rgba[4] ?? 1) * 100), 0, 100) }
   return { red: 0, green: 0, blue: 0, opacity: 100 }
@@ -35,6 +35,20 @@ export function formatColor({ red, green, blue, opacity }: Color) {
 
 export function toHex({ red, green, blue }: Color) {
   return `#${[red, green, blue].map((value) => value.toString(16).padStart(2, '0')).join('')}`
+}
+
+export function parseHexColor(value: string, opacity = 100): Color | null {
+  const normalized = value.trim().replace(/^#/, '')
+  const expanded = normalized.match(/^[0-9a-f]{3}$/i)
+    ? normalized.split('').map((character) => `${character}${character}`).join('')
+    : normalized
+  if (!/^[0-9a-f]{6}$/i.test(expanded)) return null
+  return {
+    red: Number.parseInt(expanded.slice(0, 2), 16),
+    green: Number.parseInt(expanded.slice(2, 4), 16),
+    blue: Number.parseInt(expanded.slice(4, 6), 16),
+    opacity: clamp(opacity, 0, 100),
+  }
 }
 
 export function getColorChannels(color: Color, mode: ColorMode): ColorChannelControl[] {

@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { formatColor, getColorChannels, hslToRgb, hsvToRgb, parseColor, rgbToHsl, rgbToHsv, setColorChannel } from './colorModels'
+import { formatColor, getColorChannels, hslToRgb, hsvToRgb, parseColor, parseHexColor, rgbToHsl, rgbToHsv, setColorChannel } from './colorModels'
 
 const red = { red: 255, green: 0, blue: 0, opacity: 100 }
 
@@ -42,5 +42,12 @@ describe('CSS color compatibility', () => {
     expect(parseColor('rgba(12, 34, 56, 0.45)')).toEqual({ red: 12, green: 34, blue: 56, opacity: 45 })
     expect(parseColor('transparent')).toEqual({ red: 0, green: 0, blue: 0, opacity: 0 })
     expect(formatColor({ red: 12, green: 34, blue: 56, opacity: 45 })).toBe('rgba(12, 34, 56, 0.45)')
+  })
+
+  test('parses editable hex drafts without losing the supplied opacity', () => {
+    expect(parseHexColor('#1a2B3c', 45)).toEqual({ red: 26, green: 43, blue: 60, opacity: 45 })
+    expect(parseHexColor('f0a')).toEqual({ red: 255, green: 0, blue: 170, opacity: 100 })
+    expect(parseHexColor('#12')).toBeNull()
+    expect(parseHexColor('#not-a-color')).toBeNull()
   })
 })

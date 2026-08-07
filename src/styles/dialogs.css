@@ -253,3 +253,20 @@
 .conflict-dialog p { color: #5d5b54; font-size: var(--text-body); line-height: 1.5; }
 .file-blocker code { font: 500 var(--text-micro)/1.4 DM Mono, monospace; overflow-wrap: anywhere; }
 .conflict-actions { justify-content: flex-end; gap: 8px; }
+.auth-dialog { position: relative; width: min(430px, 100%); padding: 28px; border: 1px solid var(--ink); background: var(--paper); box-shadow: 8px 8px 0 var(--signal); }
+.auth-dialog h2 { margin: 0 36px 22px 0; font-size: var(--text-heading); line-height: 1.1; letter-spacing: -.04em; }
+.auth-dialog form, .auth-dialog form label { display: grid; gap: 8px; }
+.auth-dialog form { gap: 14px; }
+.auth-dialog label { color: var(--ink); font-size: var(--text-control); font-weight: 800; }
+.auth-dialog input { height: 38px; padding: 0 10px; border: 1px solid #8f8b80; background: white; color: var(--ink); font: inherit; }
+.oauth-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.oauth-actions button, .auth-submit { min-height: 40px; padding: 8px 12px; border: 1px solid var(--ink); background: var(--ink); color: white; cursor: pointer; font-weight: 800; }
+.oauth-actions button { background: #f1eee5; color: var(--ink); }
+.oauth-actions button:hover, .auth-submit:hover { background: white; color: var(--ink); }
+.oauth-actions button:disabled, .auth-submit:disabled { opacity: .5; cursor: default; }
+.auth-divider { display: flex; align-items: center; gap: 10px; margin: 18px 0; color: #68665f; font: 600 var(--text-micro) DM Mono, monospace; text-transform: uppercase; }
+.auth-divider::before, .auth-divider::after { content: ''; height: 1px; flex: 1; background: #aaa69a; }
+.auth-message { margin: 0; color: #4f5d2f; font-size: var(--text-control); line-height: 1.4; }
+.auth-message.auth-error { color: #a1271e; }
+.auth-mode { width: 100%; margin-top: 16px; border: 0; background: transparent; color: var(--ink); cursor: pointer; font: 700 var(--text-control) inherit; text-decoration: underline; }
+.auth-close { position: absolute; top: 14px; right: 14px; width: 32px; height: 32px; border: 1px solid var(--ink); background: transparent; color: var(--ink); cursor: pointer; font-size: 20px; }

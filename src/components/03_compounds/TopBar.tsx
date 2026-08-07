@@ -6,11 +6,13 @@ import { SpriteTab } from '../02_molecules/SpriteTab'
 import styles from './TopBar.module.css'
 
 type TopBarProps = {
+  accountLabel: string
   activeSpriteId: string
   canRedo: boolean
   canUndo: boolean
   sprites: PixelWorkspace['sprites']
   onAddSprite: () => void
+  onAccount: () => void
   onCloseSprite: (id: string) => void
   onExport: () => void
   onReorderSprites: (ids: string[]) => void
@@ -22,7 +24,7 @@ type TopBarProps = {
   onUndo: () => void
 }
 
-export function TopBar({ activeSpriteId, canRedo, canUndo, sprites, onAddSprite, onCloseSprite, onExport, onReorderSprites, onOpenFiles, onOpenGuide, onRedo, onRenameSprite, onSelectSprite, onUndo }: TopBarProps) {
+export function TopBar({ accountLabel, activeSpriteId, canRedo, canUndo, sprites, onAccount, onAddSprite, onCloseSprite, onExport, onReorderSprites, onOpenFiles, onOpenGuide, onRedo, onRenameSprite, onSelectSprite, onUndo }: TopBarProps) {
   return <header className={styles.topbar}>
     <Brand />
     <nav className={styles.tabs} aria-label="Sprite tabs">
@@ -46,6 +48,7 @@ export function TopBar({ activeSpriteId, canRedo, canUndo, sprites, onAddSprite,
       <button className={styles.newTab} onClick={onAddSprite} aria-label="Add sprite tab" title="New sprite tab">+</button>
     </nav>
     <div className={styles.actions}>
+      <button className={styles.accountButton} onClick={onAccount}>{accountLabel}</button>
       <button className={styles.filesButton} onClick={onOpenFiles}>All files</button>
       <button className={styles.iconButton} onClick={onUndo} disabled={!canUndo} title="Undo"><UndoIcon /></button>
       <button className={styles.iconButton} onClick={onRedo} disabled={!canRedo} title="Redo"><RedoIcon /></button>

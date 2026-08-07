@@ -10,6 +10,7 @@
 .actions button:disabled { opacity: .35; cursor: default; }
 .iconButton { width: 36px; padding: 0; }
 .filesButton { padding: 0 10px; }
+.accountButton { max-width: 150px; padding: 0 10px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .iconButton svg { width: 18px; height: 18px; }
 .agentButton { margin-left: 6px; padding: 0 12px; }
 .agentButtonTooltip { position: relative; display: inline-flex; }
@@ -19,4 +20,4 @@
 .exportButton { padding: 0 12px; color: white; background: var(--ink) !important; border-color: var(--ink) !important; }
 .exportButton:hover:not(:disabled) { color: white; background: #34352e !important; border-color: #34352e !important; }
 @media (max-width: 850px) { .topbar { gap: 9px; } .agentButton { display: none !important; } }
-@media (max-width: 580px) { .topbar { gap: 6px; padding: 0 9px; } .iconButton, .filesButton { display: none !important; } .exportButton { width: 36px; padding: 0; font-size: 0 !important; } }
+@media (max-width: 580px) { .topbar { gap: 6px; padding: 0 9px; } .iconButton, .filesButton, .accountButton { display: none !important; } .exportButton { width: 36px; padding: 0; font-size: 0 !important; } }

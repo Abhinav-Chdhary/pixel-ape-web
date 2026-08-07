@@ -4,7 +4,9 @@ import { TopBar } from './components/03_compounds/TopBar'
 import { PalettePanel } from './components/04_organisms/PalettePanel'
 import { ToolsPanel } from './components/04_organisms/ToolsPanel'
 import { StudioTemplate } from './components/05_templates/StudioTemplate'
-import { useLocalWorkspace } from './hooks/useLocalWorkspace'
+import { AuthDialog } from './auth/AuthDialog'
+import { useAuth } from './auth/AuthContext'
+import { useWorkspace } from './hooks/useWorkspace'
 import { createProject, DEFAULT_PALETTE, drawCurvePixels, drawLinePixels, eraseLinePixels, erasePixels, fillPixels, resizeProject } from './project'
 import type { Background, LineMode, PixelProject, Tool } from './types'
 
@@ -19,10 +21,12 @@ const CANVAS_PIXEL_SCALE = 32
 const recentSpritesStorageKey = 'pixel-ape-web:recent-sprites'
 
 function App() {
+  const auth = useAuth()
+  const [authOpen, setAuthOpen] = useState(false)
   const [history, setHistory] = useState<PixelProject[]>([])
   const [future, setFuture] = useState<PixelProject[]>([])
   const activeSpriteIdRef = useRef('')
-  const sync = useLocalWorkspace((id) => {
+  const sync = useWorkspace(auth.user, (id) => {
     if (id === activeSpriteIdRef.current) { setHistory([]); setFuture([]) }
   })
   const { workspace, hydrated, writable, diagnostics, status: fileStatus, conflict, updateManifest, updateSprite, createSprite: persistNewSprite, resolveConflict, copyConflictDraft, exportConflictDraft, setReconciliationPaused } = sync
@@ -443,14 +447,16 @@ function App() {
 
   return <>
     <div className={`file-status file-status-${fileStatus}`} role="status">
-      {fileStatus === 'loading' ? 'Loading files…' : fileStatus === 'saving' ? 'Saving…' : fileStatus === 'unsaved' ? 'Unsaved changes' : fileStatus === 'conflict' ? 'File conflict' : fileStatus === 'invalid' ? 'Invalid project file' : fileStatus === 'offline' ? 'File server offline' : 'Sprite files saved'}
+      {fileStatus === 'loading' ? 'Loading workspace…' : fileStatus === 'saving' ? 'Saving…' : fileStatus === 'unsaved' ? 'Unsaved changes' : fileStatus === 'conflict' ? 'Cloud conflict' : fileStatus === 'invalid' ? 'Invalid workspace' : fileStatus === 'offline' ? 'Offline — draft safe' : auth.user ? 'Saved to cloud' : 'Saved on this device'}
     </div>
     <StudioTemplate
       topBar={<TopBar
+        accountLabel={auth.loading ? 'Loading…' : auth.user?.email ?? 'Sign in'}
         activeSpriteId={project.id}
         canRedo={Boolean(future.length)}
         canUndo={Boolean(history.length)}
         sprites={workspace.sprites}
+        onAccount={() => { if (auth.user) void auth.signOut(); else setAuthOpen(true) }}
         onAddSprite={() => setNewSpriteOpen(true)}
         onCloseSprite={closeSprite}
         onExport={exportPng}
@@ -499,6 +505,7 @@ function App() {
         onToolChange={setTool}
       />}
     />
+    {authOpen && <AuthDialog onClose={() => setAuthOpen(false)} />}
     {newSpriteOpen && <div className="dialog-backdrop" role="presentation" onMouseDown={() => setNewSpriteOpen(false)}><section className="new-sprite-dialog" role="dialog" aria-modal="true" aria-labelledby="new-sprite-title" onMouseDown={(event) => event.stopPropagation()}><p className="eyebrow">New sprite tab</p><h2 id="new-sprite-title">Set up your canvas</h2><label>Sprite name<input autoFocus value={newSprite.name} onChange={(event) => setNewSprite({ ...newSprite, name: event.target.value })} /></label><div className="dialog-grid"><label>Width<input type="number" min={MIN_CANVAS_SIZE} max={MAX_CANVAS_SIZE} value={newSpriteSizeDraft.width} onFocus={(event) => event.currentTarget.select()} onChange={(event) => { const value = event.currentTarget.value; setNewSpriteSizeDraft((current) => ({ ...current, width: value })) }} /></label><label>Height<input type="number" min={MIN_CANVAS_SIZE} max={MAX_CANVAS_SIZE} value={newSpriteSizeDraft.height} onFocus={(event) => event.currentTarget.select()} onChange={(event) => { const value = event.currentTarget.value; setNewSpriteSizeDraft((current) => ({ ...current, height: value })) }} /></label></div><p className="canvas-size-note">Canvas dimensions can be from {MIN_CANVAS_SIZE}×{MIN_CANVAS_SIZE} to {MAX_CANVAS_SIZE}×{MAX_CANVAS_SIZE} pixels.</p><fieldset><legend>Background</legend>{backgroundOptions.map((option) => <label key={option.value} className="background-choice"><input type="radio" name="new-background" checked={newSprite.background === option.value} onChange={() => setNewSprite({ ...newSprite, background: option.value })} />{option.label}</label>)}</fieldset><div className="existing-sprites"><div><b>Open an existing file</b><button className="text-button" onClick={() => { setNewSpriteOpen(false); setFilesOpen(true) }}>Browse all files</button></div>{recentSprites.slice(0, 3).map((sprite) => <button key={sprite.id} onClick={() => { switchSprite(sprite.id); setNewSpriteOpen(false) }}><span>{sprite.name || 'Untitled sprite'}</span><small>{sprite.width}×{sprite.height}</small></button>)}</div><div className="dialog-actions"><button className="quiet-button" onClick={() => setNewSpriteOpen(false)}>Cancel</button><button onClick={() => void createSprite()}>Create sprite</button></div></section></div>}
     {filesOpen && <div className="dialog-backdrop" role="presentation" onMouseDown={() => setFilesOpen(false)}><section className="file-list-dialog" role="dialog" aria-modal="true" aria-labelledby="file-list-title" onMouseDown={(event) => event.stopPropagation()}><p className="eyebrow">Sprite files</p><h2 id="file-list-title">All files</h2><p className="file-list-intro">Open, rename, duplicate, or delete a sprite file.</p><div className="file-list">{workspace.sprites.map((sprite) => <article key={sprite.id} className={sprite.id === project.id ? 'active-file' : ''}><div className="file-name"><input value={sprite.name} onChange={(event) => updateSprite(sprite.id, (current) => ({ ...current, name: event.target.value }))} aria-label={`Rename ${sprite.name || 'sprite'}`} /><small>{sprite.width}×{sprite.height}</small></div><div className="file-actions"><button onClick={() => { switchSprite(sprite.id); setFilesOpen(false) }}>Open</button><button onClick={() => void duplicateSprite(sprite)}>Duplicate</button><button className="delete-file" onClick={() => closeSprite(sprite.id)} disabled={workspace.sprites.length === 1}>Delete</button></div></article>)}</div><div className="dialog-actions"><button className="quiet-button" onClick={() => setFilesOpen(false)}>Done</button></div></section></div>}
     {(!hydrated || !writable) && <div className="file-blocker" role="alert"><section><p className="eyebrow">Project files need attention</p><h2>{!hydrated ? 'The workspace could not be loaded.' : 'Editing is paused until the files are valid.'}</h2>{diagnostics.slice(0, 4).map((item) => <p key={`${item.file}:${item.line}:${item.column}:${item.code}`}><code>{item.file}{item.line ? `:${item.line}:${item.column}` : ''}</code><br />{item.message}</p>)}{!diagnostics.length && <p>Waiting for the local Pixel Ape file server.</p>}</section></div>}

@@ -24,6 +24,8 @@ const MAX_EXPORT_DIMENSION = 4096
 const EXPORT_SCALES = [1, 4, 8, 16] as const
 type ExportScale = typeof EXPORT_SCALES[number]
 const recentSpritesStorageKey = 'pixel-ape-web:recent-sprites'
+type ReferenceAsset = { image: HTMLImageElement; name: string }
+type ReferenceCursor = { clientX: number; clientY: number; x: number; y: number; sourceX: number; sourceY: number; color: string | null }
 
 function App() {
   const auth = useAuth()
@@ -74,11 +76,13 @@ function App() {
   const [newSprite, setNewSprite] = useState({ name: 'Untitled sprite', width: 32, height: 32, background: 'transparent' as Background })
   const [newSpriteSizeDraft, setNewSpriteSizeDraft] = useState({ width: '32', height: '32' })
   const [canvasSizeDraft, setCanvasSizeDraft] = useState({ width: '', height: '' })
-  const [referenceImage, setReferenceImage] = useState<HTMLImageElement | null>(null)
-  const [referenceName, setReferenceName] = useState('')
+  const [referencesBySpriteId, setReferencesBySpriteId] = useState<Record<string, ReferenceAsset>>({})
+  const [referenceCursor, setReferenceCursor] = useState<ReferenceCursor | null>(null)
   const [selection, setSelection] = useState<{ x: number; y: number; width: number; height: number } | null>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const referenceCanvasRef = useRef<HTMLCanvasElement>(null)
+  const referenceSampleCanvasRef = useRef<HTMLCanvasElement | null>(null)
+  const referenceLoupeCanvasRef = useRef<HTMLCanvasElement>(null)
   const boardRef = useRef<HTMLDivElement>(null)
   const drawingRef = useRef(false)
   const lineStartRef = useRef<{ x: number; y: number } | null>(null)
@@ -92,6 +96,9 @@ function App() {
   const openSprites = workspace.sprites.filter((sprite) => !closedSpriteIds.has(sprite.id))
   const project = workspace.sprites.find((sprite) => sprite.id === workspace.activeSpriteId) ?? openSprites[0] ?? workspace.sprites[0]
   activeSpriteIdRef.current = project.id
+  const referenceAsset = referencesBySpriteId[project.id]
+  const referenceImage = referenceAsset?.image ?? null
+  const referenceName = referenceAsset?.name ?? ''
   const zoom = zoomBySprite[project.id] ?? 1600
   const recentSprites = [
     ...recentSpriteIds.map((id) => workspace.sprites.find((sprite) => sprite.id === id)).filter((sprite): sprite is PixelProject & { id: string } => Boolean(sprite)),
@@ -107,6 +114,9 @@ function App() {
   useEffect(() => {
     setCanvasSizeDraft({ width: String(project.width), height: String(project.height) })
   }, [project.height, project.id, project.width])
+
+  useEffect(() => setReferenceCursor(null), [project.id, referenceImage])
+  useEffect(() => setReferenceCursor(null), [tool])
 
   useEffect(() => {
     setRecentSpriteIds((current) => current[0] === project.id ? current : [project.id, ...current.filter((id) => id !== project.id)].slice(0, 12))
@@ -173,6 +183,13 @@ function App() {
       next.delete(id)
       return next
     })
+    setReferencesBySpriteId((current) => {
+      if (!current[id]) return current
+      const next = { ...current }
+      delete next[id]
+      return next
+    })
+    setReferenceCursor(null)
     setHistory([]); setFuture([])
   }
 
@@ -274,9 +291,11 @@ function App() {
     const scale = canvas.width / project.width
     ctx.clearRect(0, 0, canvas.width, canvas.height)
     ctx.fillStyle = '#f4f1e8'; ctx.fillRect(0, 0, canvas.width, canvas.height)
-    const imageScale = Math.min(canvas.width / referenceImage.width, canvas.height / referenceImage.height)
-    const width = referenceImage.width * imageScale
-    const height = referenceImage.height * imageScale
+    const imageWidth = referenceImage.naturalWidth || referenceImage.width
+    const imageHeight = referenceImage.naturalHeight || referenceImage.height
+    const imageScale = Math.min(canvas.width / imageWidth, canvas.height / imageHeight)
+    const width = imageWidth * imageScale
+    const height = imageHeight * imageScale
     ctx.drawImage(referenceImage, (canvas.width - width) / 2, (canvas.height - height) / 2, width, height)
     if (gridVisible) {
       ctx.beginPath(); ctx.strokeStyle = 'rgba(23,24,18,.35)'; ctx.lineWidth = 1
@@ -285,6 +304,51 @@ function App() {
       ctx.stroke()
     }
   }, [gridVisible, project.height, project.width, referenceImage])
+
+  useEffect(() => {
+    referenceSampleCanvasRef.current = null
+    if (!referenceImage) return
+    const width = referenceImage.naturalWidth || referenceImage.width
+    const height = referenceImage.naturalHeight || referenceImage.height
+    if (!width || !height) return
+    const canvas = document.createElement('canvas')
+    canvas.width = width
+    canvas.height = height
+    const context = canvas.getContext('2d')
+    if (!context) return
+    context.imageSmoothingEnabled = false
+    context.drawImage(referenceImage, 0, 0, width, height)
+    referenceSampleCanvasRef.current = canvas
+    return () => { referenceSampleCanvasRef.current = null }
+  }, [referenceImage])
+
+  useEffect(() => {
+    const canvas = referenceLoupeCanvasRef.current
+    const sourceCanvas = referenceSampleCanvasRef.current
+    if (!canvas || !sourceCanvas || !referenceCursor) return
+    const context = canvas.getContext('2d')!
+    const sampleSize = Math.min(9, sourceCanvas.width, sourceCanvas.height)
+    const half = Math.floor(sampleSize / 2)
+    const sourceX = Math.max(0, Math.min(sourceCanvas.width - sampleSize, referenceCursor.sourceX - half))
+    const sourceY = Math.max(0, Math.min(sourceCanvas.height - sampleSize, referenceCursor.sourceY - half))
+    context.imageSmoothingEnabled = false
+    context.clearRect(0, 0, canvas.width, canvas.height)
+    context.drawImage(sourceCanvas, sourceX, sourceY, sampleSize, sampleSize, 0, 0, canvas.width, canvas.height)
+    const cellSize = canvas.width / sampleSize
+    context.beginPath()
+    context.strokeStyle = 'rgba(23,24,18,.32)'
+    context.lineWidth = 1
+    for (let index = 1; index < sampleSize; index++) {
+      context.moveTo(Math.round(index * cellSize) + .5, 0)
+      context.lineTo(Math.round(index * cellSize) + .5, canvas.height)
+      context.moveTo(0, Math.round(index * cellSize) + .5)
+      context.lineTo(canvas.width, Math.round(index * cellSize) + .5)
+    }
+    context.stroke()
+    context.lineWidth = 3
+    context.strokeStyle = '#ff5c35'
+    context.strokeRect((referenceCursor.sourceX - sourceX) * cellSize + 1.5, (referenceCursor.sourceY - sourceY) * cellSize + 1.5, cellSize - 3, cellSize - 3)
+  }, [referenceCursor, referenceImage])
 
   const pointFromEvent = (event: React.PointerEvent<HTMLCanvasElement>) => {
     const rect = event.currentTarget.getBoundingClientRect()
@@ -323,9 +387,42 @@ function App() {
     })
     strokePointRef.current = point
   }
-  const pickColorAt = (x: number, y: number) => {
-    const pixel = project.pixels[y * project.width + x]
-    if (pixel) { setColor(pixel); setEyedropperColor(pixel); setEditingPaletteSlot(null) }
+  const applySampledColor = (pixel: string | null) => {
+    if (!pixel) return
+    setColor(pixel)
+    if (editingPaletteSlot !== null) {
+      updateManifest((current) => ({ ...current, palette: current.palette.map((swatch, index) => index === editingPaletteSlot ? pixel : swatch) }))
+      setEyedropperColor(null)
+    } else setEyedropperColor(pixel)
+  }
+  const pickColorAt = (x: number, y: number) => applySampledColor(project.pixels[y * project.width + x])
+  const referencePointFromEvent = (event: React.PointerEvent<HTMLCanvasElement>) => pointFromEvent(event)
+  const sampleReferenceAt = (point: { x: number; y: number }) => {
+    const canvas = referenceCanvasRef.current
+    const sourceCanvas = referenceSampleCanvasRef.current
+    if (!canvas || !sourceCanvas || !referenceImage) return null
+    const sourceWidth = sourceCanvas.width
+    const sourceHeight = sourceCanvas.height
+    const scale = canvas.width / project.width
+    const imageScale = Math.min(canvas.width / sourceWidth, canvas.height / sourceHeight)
+    const offsetX = (canvas.width - sourceWidth * imageScale) / 2
+    const offsetY = (canvas.height - sourceHeight * imageScale) / 2
+    const sourceX = Math.max(0, Math.min(sourceWidth - 1, Math.floor(((point.x + .5) * scale - offsetX) / imageScale)))
+    const sourceY = Math.max(0, Math.min(sourceHeight - 1, Math.floor(((point.y + .5) * scale - offsetY) / imageScale)))
+    const pixel = sourceCanvas.getContext('2d')!.getImageData(sourceX, sourceY, 1, 1).data
+    return { sourceX, sourceY, color: pixel[3] < 16 ? null : rgbToHex(pixel[0], pixel[1], pixel[2]) }
+  }
+  const updateReferenceCursor = (event: React.PointerEvent<HTMLCanvasElement>) => {
+    if (tool !== 'eyedropper') { setReferenceCursor(null); return }
+    const point = referencePointFromEvent(event)
+    const sample = sampleReferenceAt(point)
+    setCursor(point)
+    if (!sample) { setReferenceCursor(null); return }
+    setReferenceCursor({ clientX: event.clientX, clientY: event.clientY, x: point.x, y: point.y, ...sample })
+  }
+  const pickReferenceColorAt = (event: React.PointerEvent<HTMLCanvasElement>) => {
+    const point = referencePointFromEvent(event)
+    applySampledColor(sampleReferenceAt(point)?.color ?? null)
   }
   const onPointerDown = (event: React.PointerEvent<HTMLCanvasElement>) => {
     const point = pointFromEvent(event)
@@ -415,7 +512,12 @@ function App() {
   const loadReferenceImage = (file: File) => new Promise<void>((resolve, reject) => {
     const url = URL.createObjectURL(file)
     const image = new Image()
-    image.onload = () => { URL.revokeObjectURL(url); setReferenceImage(image); setReferenceName(file.name || 'Pasted image'); resolve() }
+    image.onload = () => {
+      URL.revokeObjectURL(url)
+      setReferencesBySpriteId((current) => ({ ...current, [activeSpriteIdRef.current]: { image, name: file.name || 'Pasted image' } }))
+      setReferenceCursor(null)
+      resolve()
+    }
     image.onerror = () => { URL.revokeObjectURL(url); reject(new Error('Image could not be decoded')) }
     image.src = url
   })
@@ -493,7 +595,7 @@ function App() {
   const canvas = <section className="canvas-area" aria-label="Pixel canvas workspace">
     <div className="canvas-toolbar"><div>
     </div><div className="canvas-config"><label>W <input type="number" min={MIN_CANVAS_SIZE} max={MAX_CANVAS_SIZE} value={canvasSizeDraft.width} onChange={(event) => { const value = event.currentTarget.value; setCanvasSizeDraft((current) => ({ ...current, width: value })) }} onBlur={() => commitCanvasSize('width')} onKeyDown={(event) => { if (event.key === 'Enter') event.currentTarget.blur() }} aria-label="Canvas width" /></label><label>H <input type="number" min={MIN_CANVAS_SIZE} max={MAX_CANVAS_SIZE} value={canvasSizeDraft.height} onChange={(event) => { const value = event.currentTarget.value; setCanvasSizeDraft((current) => ({ ...current, height: value })) }} onBlur={() => commitCanvasSize('height')} onKeyDown={(event) => { if (event.key === 'Enter') event.currentTarget.blur() }} aria-label="Canvas height" /></label><button className="reference-control" onClick={() => setReferenceDialogOpen(true)}><b>Reference</b><span>{referenceName || 'Add image'}</span></button>{referenceImage && <button className="reference-convert" onClick={() => setReferenceConversionOpen(true)}>Convert to pixels</button>}<div className="background-control" role="group" aria-label="Canvas background"><span>Background</span>{backgroundOptions.map((option) => <button key={option.value} className={`${option.value} ${project.background === option.value ? 'active' : ''}`} onClick={() => setBackground(option.value)} title={`${option.label} background`} aria-label={`${option.label} background`} />)}</div></div></div>
-    <div className="drafting-board" ref={boardRef}><span className="register top-left" /><span className="register top-right" /><span className="register bottom-left" /><span className="register bottom-right" /><div className="canvas-pair"><div className="canvas-frame" style={{ width: `${project.width * zoom / 100}px`, height: `${project.height * zoom / 100}px` }}><canvas ref={canvasRef} width={project.width * canvasPixelScale} height={project.height * canvasPixelScale} onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerCancel={onPointerUp} onPointerEnter={(event) => { setCanvasHovered(true); setCursor(pointFromEvent(event)) }} onPointerLeave={() => setCanvasHovered(false)} style={{ cursor: tool === 'move' && selection && cursor.x >= selection.x && cursor.x < selection.x + selection.width && cursor.y >= selection.y && cursor.y < selection.y + selection.height ? 'move' : 'crosshair' }} aria-label={`${project.width} by ${project.height} editable pixel canvas`} /></div>{referenceImage && <div className="canvas-frame reference-frame" style={{ width: `${project.width * zoom / 100}px`, height: `${project.height * zoom / 100}px` }}><button className="reference-remove" type="button" onClick={() => { setReferenceImage(null); setReferenceName(''); setReferenceConversionOpen(false) }} aria-label="Remove reference image" title="Remove reference image">×</button><canvas ref={referenceCanvasRef} width={project.width * canvasPixelScale} height={project.height * canvasPixelScale} tabIndex={0} onClick={() => setReferenceDialogOpen(true)} onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); setReferenceDialogOpen(true) } }} aria-label={`${project.width} by ${project.height} reference image. Click to replace.`} /></div>}</div></div>
+    <div className="drafting-board" ref={boardRef}><span className="register top-left" /><span className="register top-right" /><span className="register bottom-left" /><span className="register bottom-right" /><div className="canvas-pair"><div className="canvas-frame" style={{ width: `${project.width * zoom / 100}px`, height: `${project.height * zoom / 100}px` }}><canvas ref={canvasRef} width={project.width * canvasPixelScale} height={project.height * canvasPixelScale} onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerCancel={onPointerUp} onPointerEnter={(event) => { setCanvasHovered(true); setCursor(pointFromEvent(event)) }} onPointerLeave={() => setCanvasHovered(false)} style={{ cursor: tool === 'move' && selection && cursor.x >= selection.x && cursor.x < selection.x + selection.width && cursor.y >= selection.y && cursor.y < selection.y + selection.height ? 'move' : 'crosshair' }} aria-label={`${project.width} by ${project.height} editable pixel canvas`} /></div>{referenceImage && <div className="canvas-frame reference-frame" style={{ width: `${project.width * zoom / 100}px`, height: `${project.height * zoom / 100}px` }}><button className="reference-remove" type="button" onClick={() => { setReferencesBySpriteId((current) => { const next = { ...current }; delete next[project.id]; return next }); setReferenceCursor(null); setReferenceConversionOpen(false) }} aria-label="Remove reference image" title="Remove reference image">×</button><canvas ref={referenceCanvasRef} width={project.width * canvasPixelScale} height={project.height * canvasPixelScale} tabIndex={0} onPointerDown={(event) => { if (tool === 'eyedropper') { event.preventDefault(); pickReferenceColorAt(event) } }} onPointerMove={updateReferenceCursor} onPointerEnter={updateReferenceCursor} onPointerLeave={() => setReferenceCursor(null)} onClick={() => { if (tool !== 'eyedropper') setReferenceDialogOpen(true) }} onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); if (tool !== 'eyedropper') setReferenceDialogOpen(true) } }} style={{ cursor: tool === 'eyedropper' ? 'crosshair' : 'pointer' }} aria-label={`${project.width} by ${project.height} reference image. ${tool === 'eyedropper' ? 'Move to preview a color and click to sample.' : 'Click to replace.'}`} /></div>}</div></div>{referenceCursor && <div className="reference-loupe" style={{ left: `${Math.min(Math.max(12, referenceCursor.clientX + 18), Math.max(12, globalThis.innerWidth - 190))}px`, top: `${Math.min(Math.max(12, referenceCursor.clientY + 18), Math.max(12, globalThis.innerHeight - 210))}px` }} aria-live="polite"><div className="reference-loupe-heading"><span>Sampling</span><b>{referenceCursor.x},{referenceCursor.y}</b></div><canvas ref={referenceLoupeCanvasRef} width="108" height="108" aria-hidden="true" /><div className="reference-loupe-color"><span className={`reference-loupe-swatch ${referenceCursor.color ? '' : 'reference-loupe-transparent'}`} style={referenceCursor.color ? { backgroundColor: referenceCursor.color } : undefined} /><code>{referenceCursor.color ?? 'Transparent'}</code></div><p>Click to set {editingPaletteSlot === null ? 'foreground' : `slot ${editingPaletteSlot + 1}`}</p></div>}
     <div className="canvas-status"><span>X <b>{String(cursor.x).padStart(2, '0')}</b></span><span>Y <b>{String(cursor.y).padStart(2, '0')}</b></span><span className="status-rule" /><span>{tool === 'line' && curveStage ? 'CURVE: SET BEND' : tool === 'line' ? `LINE: ${lineMode.toUpperCase()}` : tool.toUpperCase()}</span><label className="grid-control"><input type="checkbox" checked={gridVisible} onChange={(event) => setGridVisible(event.target.checked)} /> Grid</label><div className="zoom-control"><span>Zoom</span><button onClick={() => changeZoom(-100)} disabled={zoom <= MIN_ZOOM} aria-label="Zoom out">−</button><input type="range" min={MIN_ZOOM} max={MAX_ZOOM} step="100" value={zoom} onChange={(event) => setClampedZoom(Number(event.target.value))} aria-label="Canvas zoom" /><button onClick={() => changeZoom(100)} disabled={zoom >= MAX_ZOOM} aria-label="Zoom in">+</button><b>{zoom}%</b></div></div>
   </section>
 
@@ -542,7 +644,7 @@ function App() {
         onPaletteChange={(palette) => updateManifest((current) => ({ ...current, palette }))}
         onColorChange={setColor}
         onBackgroundChange={setBackground}
-        onPaletteSlotSelect={(index, slotColor) => { setEditingPaletteSlot(index); setColor(slotColor) }}
+        onPaletteSlotSelect={(index, slotColor) => { setEditingPaletteSlot(index); setEyedropperColor(null); setColor(slotColor) }}
         onEmptySlotClick={(index) => {
           if (eyedropperColor) {
             updateManifest((current) => ({ ...current, palette: current.palette.map((swatch, slotIndex) => slotIndex === index ? eyedropperColor : swatch) }))
@@ -554,7 +656,7 @@ function App() {
           setEditingPaletteSlot(index)
           setColor(null)
         }}
-        onSetSlot={(index, slotColor) => { setColor(slotColor); updateManifest((current) => ({ ...current, palette: current.palette.map((swatch, slotIndex) => slotIndex === index ? slotColor : swatch) })) }}
+        onSetSlot={(index, slotColor) => { setEyedropperColor(null); setColor(slotColor); updateManifest((current) => ({ ...current, palette: current.palette.map((swatch, slotIndex) => slotIndex === index ? slotColor : swatch) })) }}
       />}
       canvas={canvas}
       tools={<ToolsPanel
@@ -593,6 +695,10 @@ function App() {
 }
 
 function drawCheckerboard(ctx: CanvasRenderingContext2D, width: number, height: number, pixelScale: number) { for (let y = 0; y < height / pixelScale; y++) for (let x = 0; x < width / pixelScale; x++) { ctx.fillStyle = (x + y) % 2 ? '#dedede' : '#f4f4f4'; ctx.fillRect(x * pixelScale, y * pixelScale, pixelScale, pixelScale) } }
+
+function rgbToHex(red: number, green: number, blue: number) {
+  return `#${[red, green, blue].map((channel) => channel.toString(16).padStart(2, '0')).join('')}`
+}
 
 function previewMovedPixels(
   width: number,

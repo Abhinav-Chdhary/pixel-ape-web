@@ -13,7 +13,7 @@ type ReferenceConversionDialogProps = {
 
 export function ReferenceConversionDialog({ image, palette, project, onApply, onClose }: ReferenceConversionDialogProps) {
   const [fit, setFit] = useState<ReferenceFit>('contain')
-  const [paletteMode, setPaletteMode] = useState<ReferencePaletteMode>('current')
+  const [paletteMode, setPaletteMode] = useState<ReferencePaletteMode>('auto')
   const [autoColorCount, setAutoColorCount] = useState(12)
   const [dither, setDither] = useState(false)
   const [result, setResult] = useState<ReferenceConversionResult | null>(null)

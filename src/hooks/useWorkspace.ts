@@ -10,6 +10,15 @@ type FileStatus = 'loading' | 'saved' | 'saving' | 'unsaved' | 'conflict' | 'inv
 export type SyncError = { code?: string; message: string } | null
 type ProjectRow = { id: string; name: string; active_sprite_id: string | null; palette: unknown; revision: number }
 type SpriteRow = { id: string; position: number; name: string; format_version: number; width: number; height: number; background: string; pixels: unknown }
+export type WorkspaceDelta = {
+  name: string | null
+  activeSpriteId: string | null
+  palette: Array<string | null> | null
+  spritePatches: Array<{
+    id: string; position?: number; name?: string; format_version?: number; width?: number; height?: number; background?: string; pixels?: Array<string | null>
+  }>
+  deletedSpriteIds: string[]
+}
 
 const storageKey = 'pixel-ape-web:workspace'
 const cloudProjectKey = 'pixel-ape-web:cloud-project'
@@ -78,6 +87,7 @@ export function useWorkspace(user: User | null, onExternalSpriteChange?: (id: st
   const [showGuestNudge, setShowGuestNudge] = useState(false)
   const projectIdRef = useRef<string | null>(null)
   const revisionRef = useRef(0)
+  const cloudBaselineRef = useRef<PixelWorkspace | null>(null)
   const saveCoordinatorRef = useRef(new LatestTaskCoordinator())
   const workspaceRef = useRef(workspace)
   const skipSaveRef = useRef(true)
@@ -145,6 +155,7 @@ export function useWorkspace(user: User | null, onExternalSpriteChange?: (id: st
       // Do not let a slow request from the previous account block this owner.
       // The old coordinator may finish, but its epoch guards make it inert.
       saveCoordinatorRef.current = new LatestTaskCoordinator()
+      cloudBaselineRef.current = null
       setCloudReady(false)
       recoveryFailuresRef.current.clear()
       retryKindRef.current = null
@@ -157,6 +168,7 @@ export function useWorkspace(user: User | null, onExternalSpriteChange?: (id: st
     if (!user || !supabase) {
       projectIdRef.current = null
       revisionRef.current = 0
+      cloudBaselineRef.current = null
       setCloudReady(false)
       setStatus('saved')
       const guestWorkspace = readLocalWorkspace()
@@ -198,6 +210,7 @@ export function useWorkspace(user: User | null, onExternalSpriteChange?: (id: st
       const hasOfflineDraft = Boolean(savedUserWorkspace && hasDirtyDraft && storedRevision === result.revision && result.workspace)
       const hasDivergedDraft = Boolean(savedUserWorkspace && hasDirtyDraft && storedRevision !== result.revision && result.workspace)
       const nextWorkspace = ensureCloudIds(hasOfflineDraft || hasDivergedDraft || !result.workspace ? local : result.workspace)
+      cloudBaselineRef.current = ensureCloudIds(result.workspace ?? local)
       loadedOwnerRef.current = owner
       setWorkspace(nextWorkspace)
       onExternalSpriteChange?.(nextWorkspace.activeSpriteId)
@@ -241,8 +254,6 @@ export function useWorkspace(user: User | null, onExternalSpriteChange?: (id: st
     if (!user || !supabase || !cloudReady || loadedOwnerRef.current !== user.id || skipSaveRef.current || pausedRef.current || conflict) return
     setStatus('unsaved')
     const timer = window.setTimeout(() => {
-      const snapshot = workspaceRef.current
-      const snapshotGeneration = mutationGenerationRef.current
       const projectId = projectIdRef.current
       const epoch = ownerEpochRef.current
       const owner = user.id
@@ -251,14 +262,30 @@ export function useWorkspace(user: User | null, onExternalSpriteChange?: (id: st
       saveCoordinatorRef.current.enqueue(async () => {
         try {
           if (ownerEpochRef.current !== epoch || loadedOwnerRef.current !== owner) return
+          // Read the desired state only when this latest-wins task actually runs.
+          // A preceding request may have advanced both the baseline and revision.
+          const snapshot = workspaceRef.current
+          const snapshotGeneration = mutationGenerationRef.current
+          const baseline = cloudBaselineRef.current
+          if (!baseline) return
+          assertWorkspaceLimits(snapshot)
+          const delta = buildWorkspaceDelta(baseline, snapshot)
+          if (isWorkspaceDeltaEmpty(delta)) {
+            if (mutationGenerationRef.current === snapshotGeneration) {
+              writeRecoveryValue('dirty', `${cloudDirtyKey}:${user.id}`, 'false')
+              setStatus(recoveryFailuresRef.current.size ? 'invalid' : 'saved')
+            }
+            return
+          }
           const expectedRevision = revisionRef.current
-          const nextRevision = await saveCloudWorkspace(projectId, snapshot, expectedRevision)
+          const nextRevision = await saveCloudWorkspaceDelta(projectId, delta, expectedRevision)
           if (ownerEpochRef.current !== epoch || loadedOwnerRef.current !== owner) return
           retryCountRef.current = 0
           retryKindRef.current = null
           if (retryTimerRef.current !== null) window.clearTimeout(retryTimerRef.current)
           retryTimerRef.current = null
           revisionRef.current = nextRevision
+          cloudBaselineRef.current = snapshot
           writeRecoveryValue('revision', `${cloudRevisionKey}:${user.id}`, String(nextRevision))
           if (mutationGenerationRef.current === snapshotGeneration) {
             writeRecoveryValue('dirty', `${cloudDirtyKey}:${user.id}`, 'false')
@@ -343,14 +370,18 @@ export function useWorkspace(user: User | null, onExternalSpriteChange?: (id: st
       const result = await hydrateCloud(user, workspaceRef.current, projectId)
       if (!isCurrent()) return
       projectIdRef.current = result.projectId; revisionRef.current = result.revision
-      if (result.workspace) setWorkspace(result.workspace)
+      if (result.workspace) {
+        cloudBaselineRef.current = result.workspace
+        setWorkspace(result.workspace)
+      }
       writeRecoveryValue('revision', `${cloudRevisionKey}:${owner}`, String(result.revision))
       writeRecoveryValue('dirty', `${cloudDirtyKey}:${owner}`, 'false')
     } else {
-      const { data, error } = await supabase.from('projects').select('revision').eq('id', projectId).single()
+      const draft = workspaceRef.current
+      const result = await hydrateCloud(user, draft, projectId)
       if (!isCurrent()) return
-      if (error) throw error
-      revisionRef.current = data.revision
+      revisionRef.current = result.revision
+      cloudBaselineRef.current = result.workspace ?? draft
       writeRecoveryValue('dirty', `${cloudDirtyKey}:${owner}`, 'true')
       skipSaveRef.current = false
       setWorkspace((current) => ({ ...current }))
@@ -423,22 +454,60 @@ async function createCloudWorkspace(local: PixelWorkspace, imported: boolean) {
   return { projectId, revision: Number(revision) || 1, workspace: null as PixelWorkspace | null, created: !imported, imported }
 }
 
-async function saveCloudWorkspace(projectId: string, workspace: PixelWorkspace, expectedRevision: number) {
+async function saveCloudWorkspaceDelta(projectId: string, delta: WorkspaceDelta, expectedRevision: number) {
   if (!supabase) throw new Error('Supabase is not configured')
-  const cloudWorkspace = ensureCloudIds(workspace)
-  assertWorkspaceLimits(cloudWorkspace)
-  serializedWorkspace(cloudWorkspace, MAX_WORKSPACE_BYTES)
-  const { data, error } = await supabase.rpc('save_workspace', {
+  const { data, error } = await supabase.rpc('save_workspace_delta', {
     p_project_id: projectId,
     p_expected_revision: expectedRevision,
-    p_name: cloudWorkspace.sprites[0]?.name || 'My pixel art',
-    p_active_sprite_id: cloudWorkspace.activeSpriteId,
-    p_palette: cloudWorkspace.palette,
-    p_sprites: spriteRows(projectId, cloudWorkspace).map(({ project_id: _projectId, ...sprite }) => sprite),
+    p_name: delta.name,
+    p_active_sprite_id: delta.activeSpriteId,
+    p_palette: delta.palette,
+    p_sprite_patches: delta.spritePatches,
+    p_deleted_sprite_ids: delta.deletedSpriteIds,
   })
   if (error?.code === '40001') throw new CloudConflictError()
   if (error) throw error
   return Number(data)
+}
+
+export function buildWorkspaceDelta(baseline: PixelWorkspace, desired: PixelWorkspace): WorkspaceDelta {
+  const baselineById = new Map(baseline.sprites.map((sprite, position) => [sprite.id, { sprite, position }]))
+  const desiredIds = new Set(desired.sprites.map((sprite) => sprite.id))
+  const spritePatches = desired.sprites.flatMap((sprite, position) => {
+    const previous = baselineById.get(sprite.id)
+    if (!previous) return [{ id: sprite.id, position, name: sprite.name, format_version: sprite.version,
+      width: sprite.width, height: sprite.height, background: sprite.background, pixels: sprite.pixels }]
+    const patch: WorkspaceDelta['spritePatches'][number] = { id: sprite.id }
+    if (previous.position !== position) patch.position = position
+    if (previous.sprite.name !== sprite.name) patch.name = sprite.name
+    if (previous.sprite.version !== sprite.version) patch.format_version = sprite.version
+    if (previous.sprite.width !== sprite.width) patch.width = sprite.width
+    if (previous.sprite.height !== sprite.height) patch.height = sprite.height
+    if (previous.sprite.background !== sprite.background) patch.background = sprite.background
+    if (!arraysEqual(previous.sprite.pixels, sprite.pixels)) patch.pixels = sprite.pixels
+    return Object.keys(patch).length === 1 ? [] : [patch]
+  })
+  return {
+    name: projectName(baseline) === projectName(desired) ? null : projectName(desired),
+    activeSpriteId: baseline.activeSpriteId === desired.activeSpriteId ? null : desired.activeSpriteId,
+    palette: arraysEqual(baseline.palette, desired.palette) ? null : desired.palette,
+    spritePatches,
+    deletedSpriteIds: baseline.sprites.filter((sprite) => !desiredIds.has(sprite.id)).map((sprite) => sprite.id),
+  }
+}
+
+export function isWorkspaceDeltaEmpty(delta: WorkspaceDelta) {
+  return delta.name === null && delta.activeSpriteId === null && delta.palette === null
+    && delta.spritePatches.length === 0 && delta.deletedSpriteIds.length === 0
+}
+
+function projectName(workspace: PixelWorkspace) {
+  return workspace.sprites[0]?.name || 'My pixel art'
+}
+
+function arraysEqual<T>(left: T[], right: T[]) {
+  if (left === right) return true
+  return left.length === right.length && left.every((value, index) => value === right[index])
 }
 
 function spriteRows(projectId: string, workspace: PixelWorkspace) {

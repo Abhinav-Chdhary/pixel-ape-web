@@ -178,6 +178,21 @@
   font-weight: 800;
   text-transform: uppercase;
 }
+.export-dialog { width: min(500px, 100%); padding: 28px; border: 1px solid var(--ink); background: var(--paper); box-shadow: 8px 8px 0 var(--signal); }
+.export-dialog h2 { margin: 0 0 18px; font-size: var(--text-heading); line-height: 1.1; letter-spacing: -.04em; }
+.export-dimensions { display: flex; align-items: baseline; justify-content: space-between; gap: 14px; padding: 15px 0; border-block: 1px solid var(--ink); }
+.export-dimensions strong { font: 800 calc(28px * var(--type-scale))/1 Manrope, sans-serif; letter-spacing: -.04em; }
+.export-dimensions span { color: #68665f; font: 500 var(--text-micro) DM Mono, monospace; text-transform: uppercase; }
+.export-scales { display: grid; grid-template-columns: repeat(4, 1fr); gap: 7px; margin-top: 14px; }
+.export-scales button { min-width: 0; padding: 11px 6px 9px; border: 1px solid #8f8b80; background: #e6e2d8; color: var(--ink); cursor: pointer; }
+.export-scales button:hover:not(:disabled) { border-color: var(--ink); background: white; }
+.export-scales button.selected-export-scale { border-color: var(--ink); outline: 3px solid var(--signal); outline-offset: -4px; background: white; }
+.export-scales button:disabled { opacity: .38; cursor: not-allowed; }
+.export-scales b, .export-scales small { display: block; }
+.export-scales b { font: 800 var(--text-body)/1 Manrope, sans-serif; }
+.export-scales small { margin-top: 6px; color: #68665f; font: 500 var(--text-micro)/1 DM Mono, monospace; }
+.export-note { margin: 14px 0 0; color: #5d5b54; font-size: var(--text-control); line-height: 1.5; }
+.export-actions { justify-content: flex-end; gap: 8px; }
 .background-choice {
   display: flex;
   align-items: center;

@@ -18,6 +18,23 @@ const cloudDirtyKey = 'pixel-ape-web:cloud-dirty'
 const guestDirtyKey = 'pixel-ape-web:guest-dirty'
 const guestNudgeSeenKey = 'pixel-ape-web:guest-sync-nudge-seen'
 const guestImportHandledKey = 'pixel-ape-web:guest-import-handled'
+export const MAX_WORKSPACE_BYTES = 4 * 1024 * 1024
+export const MAX_WORKSPACE_PIXELS = 262_144
+export const MAX_WORKSPACE_SPRITES = 50
+
+function serializedWorkspace(workspace: PixelWorkspace, limit: number) {
+  const value = JSON.stringify(workspace)
+  if (new Blob([value]).size > limit) throw new WorkspacePersistenceError(limit)
+  return value
+}
+
+function storeLocalWorkspace(key: string, workspace: PixelWorkspace) {
+  globalThis.localStorage?.setItem(key, serializedWorkspace(workspace, MAX_WORKSPACE_BYTES))
+}
+
+function trySetLocalValue(key: string, value: string) {
+  try { globalThis.localStorage?.setItem(key, value); return true } catch { return false }
+}
 
 function readLocalWorkspace(key = storageKey) {
   try {
@@ -28,7 +45,30 @@ function readLocalWorkspace(key = storageKey) {
   }
 }
 
+export class LatestTaskCoordinator {
+  private running = false
+  private pending: (() => Promise<void>) | null = null
+
+  enqueue(task: () => Promise<void>) {
+    this.pending = task
+    if (!this.running) void this.drain()
+  }
+
+  clearPending() { this.pending = null }
+
+  private async drain() {
+    this.running = true
+    while (this.pending) {
+      const task = this.pending
+      this.pending = null
+      await task()
+    }
+    this.running = false
+  }
+}
+
 export function useWorkspace(user: User | null, onExternalSpriteChange?: (id: string) => void) {
+  const userId = user?.id
   const [workspace, setWorkspace] = useState<PixelWorkspace>(readLocalWorkspace)
   const [status, setStatus] = useState<FileStatus>('saved')
   const [syncError, setSyncError] = useState<SyncError>(null)
@@ -38,27 +78,81 @@ export function useWorkspace(user: User | null, onExternalSpriteChange?: (id: st
   const [showGuestNudge, setShowGuestNudge] = useState(false)
   const projectIdRef = useRef<string | null>(null)
   const revisionRef = useRef(0)
-  const saveSequenceRef = useRef(Promise.resolve())
+  const saveCoordinatorRef = useRef(new LatestTaskCoordinator())
   const workspaceRef = useRef(workspace)
   const skipSaveRef = useRef(true)
   const pausedRef = useRef(false)
   const loadedOwnerRef = useRef<string | null>('guest')
   const hydrationRef = useRef<{ owner: string; promise: ReturnType<typeof hydrateCloud> } | null>(null)
   const mutationGenerationRef = useRef(0)
+  const ownerEpochRef = useRef(0)
+  const ownerIdentityRef = useRef<string | null>(null)
+  const retryTimerRef = useRef<number | null>(null)
+  const retryCountRef = useRef(0)
+  const retryKindRef = useRef<'hydrate' | 'save' | null>(null)
+  const recoveryFailuresRef = useRef(new Set<string>())
+  const [hydrationRetryTick, setHydrationRetryTick] = useState(0)
+  const [saveRetryTick, setSaveRetryTick] = useState(0)
   workspaceRef.current = workspace
+
+  const writeRecoveryValue = useCallback((name: string, key: string, value: string) => {
+    if (trySetLocalValue(key, value)) {
+      recoveryFailuresRef.current.delete(name)
+      if (!recoveryFailuresRef.current.size) setSyncError(null)
+      return true
+    }
+    recoveryFailuresRef.current.add(name)
+    setSyncError({ code: 'LOCAL_STORAGE_FAILED', message: 'Your draft is still open but recovery data could not be stored locally.' })
+    setStatus('invalid')
+    return false
+  }, [])
 
   useEffect(() => {
     const owner = user?.id ?? 'guest'
     if (loadedOwnerRef.current !== owner) return
     const key = user ? `${storageKey}:${user.id}` : storageKey
-    globalThis.localStorage?.setItem(key, JSON.stringify(workspace))
+    try {
+      storeLocalWorkspace(key, workspace)
+      recoveryFailuresRef.current.delete('workspace')
+      if (!recoveryFailuresRef.current.size) setSyncError(null)
+    } catch (error) {
+      recoveryFailuresRef.current.add('workspace')
+      const detail = getSyncError(error)
+      setSyncError({ code: detail?.code ?? 'LOCAL_STORAGE_FAILED', message: `Your draft is still open but could not be stored locally. ${detail?.message ?? ''}`.trim() })
+      setStatus('invalid')
+    }
   }, [user, workspace])
+
+  useEffect(() => {
+    const retryNow = () => {
+      if (!retryKindRef.current) return
+      retryCountRef.current = 0
+      if (retryKindRef.current === 'hydrate') setHydrationRetryTick((current) => current + 1)
+      else setSaveRetryTick((current) => current + 1)
+    }
+    globalThis.addEventListener?.('online', retryNow)
+    return () => globalThis.removeEventListener?.('online', retryNow)
+  }, [])
 
   useEffect(() => {
     let active = true
     setConflict(null)
-    setSyncError(null)
+    if (!recoveryFailuresRef.current.size) setSyncError(null)
     const owner = user?.id ?? 'guest'
+    if (ownerIdentityRef.current !== owner) {
+      ownerIdentityRef.current = owner
+      ownerEpochRef.current += 1
+      // Do not let a slow request from the previous account block this owner.
+      // The old coordinator may finish, but its epoch guards make it inert.
+      saveCoordinatorRef.current = new LatestTaskCoordinator()
+      setCloudReady(false)
+      recoveryFailuresRef.current.clear()
+      retryKindRef.current = null
+      retryCountRef.current = 0
+    }
+    const epoch = ownerEpochRef.current
+    if (retryTimerRef.current !== null) window.clearTimeout(retryTimerRef.current)
+    retryTimerRef.current = null
     loadedOwnerRef.current = null
     if (!user || !supabase) {
       projectIdRef.current = null
@@ -88,13 +182,17 @@ export function useWorkspace(user: User | null, onExternalSpriteChange?: (id: st
       : hydrateCloud(user, local, undefined, shouldImportGuest)
     hydrationRef.current = { owner, promise: hydration }
     void hydration.then((result) => {
-      if (!active) return
+      if (!active || ownerEpochRef.current !== epoch) return
+      retryCountRef.current = 0
+      retryKindRef.current = null
+      if (retryTimerRef.current !== null) window.clearTimeout(retryTimerRef.current)
+      retryTimerRef.current = null
       projectIdRef.current = result.projectId
       revisionRef.current = result.revision
-      globalThis.localStorage?.setItem(cloudProjectKey, result.projectId)
+      writeRecoveryValue('project', cloudProjectKey, result.projectId)
       if (result.created || result.imported) {
-        globalThis.localStorage?.setItem(guestDirtyKey, 'false')
-        globalThis.localStorage?.setItem(guestImportHandledKey, 'true')
+        writeRecoveryValue('dirty', guestDirtyKey, 'false')
+        writeRecoveryValue('import', guestImportHandledKey, 'true')
         setSyncNotice(result.imported ? 'imported' : 'created')
       }
       const hasOfflineDraft = Boolean(savedUserWorkspace && hasDirtyDraft && storedRevision === result.revision && result.workspace)
@@ -109,101 +207,157 @@ export function useWorkspace(user: User | null, onExternalSpriteChange?: (id: st
         setStatus('conflict')
         return
       }
-      globalThis.localStorage?.setItem(`${cloudRevisionKey}:${user.id}`, String(result.revision))
-      if (!hasOfflineDraft) globalThis.localStorage?.setItem(`${cloudDirtyKey}:${user.id}`, 'false')
-      setStatus('saved')
+      writeRecoveryValue('revision', `${cloudRevisionKey}:${user.id}`, String(result.revision))
+      if (!hasOfflineDraft) writeRecoveryValue('dirty', `${cloudDirtyKey}:${user.id}`, 'false')
+      setStatus(recoveryFailuresRef.current.size ? 'invalid' : 'saved')
       window.setTimeout(() => {
+        if (!active || ownerEpochRef.current !== epoch || loadedOwnerRef.current !== owner) return
         skipSaveRef.current = false
         if (hasOfflineDraft) setWorkspace((current) => ({ ...current }))
       }, 0)
     }).catch((error: unknown) => {
-      if (!active) return
+      if (!active || ownerEpochRef.current !== epoch) return
+      hydrationRef.current = null
       loadedOwnerRef.current = owner
       setWorkspace(local)
       setCloudReady(false)
       if (isNetworkError(error)) setStatus('offline')
       else { setSyncError(getSyncError(error)); setStatus('sync-error') }
+      if (!isTransientSyncError(error)) return
+      retryKindRef.current = 'hydrate'
+      const delay = Math.min(30_000, 1000 * 2 ** retryCountRef.current++)
+      retryTimerRef.current = window.setTimeout(() => {
+        if (ownerEpochRef.current === epoch && retryKindRef.current === 'hydrate') setHydrationRetryTick((current) => current + 1)
+      }, delay)
     })
-    return () => { active = false }
-  }, [onExternalSpriteChange, user])
+    return () => {
+      active = false
+      if (retryTimerRef.current !== null) window.clearTimeout(retryTimerRef.current)
+      retryTimerRef.current = null
+    }
+  }, [hydrationRetryTick, onExternalSpriteChange, userId])
 
   useEffect(() => {
-    if (!user || !supabase || !cloudReady || skipSaveRef.current || pausedRef.current || conflict) return
+    if (!user || !supabase || !cloudReady || loadedOwnerRef.current !== user.id || skipSaveRef.current || pausedRef.current || conflict) return
     setStatus('unsaved')
     const timer = window.setTimeout(() => {
       const snapshot = workspaceRef.current
       const snapshotGeneration = mutationGenerationRef.current
       const projectId = projectIdRef.current
+      const epoch = ownerEpochRef.current
+      const owner = user.id
       if (!projectId) return
       setStatus('saving')
-      saveSequenceRef.current = saveSequenceRef.current.then(async () => {
-        const nextRevision = await saveCloudWorkspace(projectId, snapshot, revisionRef.current)
-        revisionRef.current = nextRevision
-        globalThis.localStorage?.setItem(`${cloudRevisionKey}:${user.id}`, String(nextRevision))
-        if (mutationGenerationRef.current === snapshotGeneration) {
-          globalThis.localStorage?.setItem(`${cloudDirtyKey}:${user.id}`, 'false')
-          setStatus('saved')
-        } else {
-          setStatus('unsaved')
+      saveCoordinatorRef.current.enqueue(async () => {
+        try {
+          if (ownerEpochRef.current !== epoch || loadedOwnerRef.current !== owner) return
+          const expectedRevision = revisionRef.current
+          const nextRevision = await saveCloudWorkspace(projectId, snapshot, expectedRevision)
+          if (ownerEpochRef.current !== epoch || loadedOwnerRef.current !== owner) return
+          retryCountRef.current = 0
+          retryKindRef.current = null
+          if (retryTimerRef.current !== null) window.clearTimeout(retryTimerRef.current)
+          retryTimerRef.current = null
+          revisionRef.current = nextRevision
+          writeRecoveryValue('revision', `${cloudRevisionKey}:${user.id}`, String(nextRevision))
+          if (mutationGenerationRef.current === snapshotGeneration) {
+            writeRecoveryValue('dirty', `${cloudDirtyKey}:${user.id}`, 'false')
+            setStatus(recoveryFailuresRef.current.size ? 'invalid' : 'saved')
+          } else {
+            setStatus('unsaved')
+          }
+        } catch (error: unknown) {
+          if (ownerEpochRef.current !== epoch || loadedOwnerRef.current !== owner) return
+          if (error instanceof CloudConflictError) {
+            saveCoordinatorRef.current.clearPending()
+            setConflict({ resource: 'manifest' })
+            setStatus('conflict')
+          } else if (error instanceof WorkspacePersistenceError) {
+            setSyncError(getSyncError(error))
+            setStatus('invalid')
+          } else if (isNetworkError(error)) setStatus('offline')
+          else { setSyncError(getSyncError(error)); setStatus('sync-error') }
+          if (isTransientSyncError(error)) {
+            retryKindRef.current = 'save'
+            const delay = Math.min(30_000, 1000 * 2 ** retryCountRef.current++)
+            retryTimerRef.current = window.setTimeout(() => {
+              if (ownerEpochRef.current === epoch && retryKindRef.current === 'save') setSaveRetryTick((current) => current + 1)
+            }, delay)
+          }
         }
-      }).catch((error: unknown) => {
-        if (error instanceof CloudConflictError) {
-          setConflict({ resource: 'manifest' })
-          setStatus('conflict')
-        } else if (isNetworkError(error)) setStatus('offline')
-        else { setSyncError(getSyncError(error)); setStatus('sync-error') }
       })
     }, 1000)
     return () => window.clearTimeout(timer)
-  }, [cloudReady, conflict, user, workspace])
+  }, [cloudReady, conflict, saveRetryTick, userId, workspace])
 
   const markDirty = useCallback(() => {
     mutationGenerationRef.current += 1
     if (user && loadedOwnerRef.current === user.id) {
-      globalThis.localStorage?.setItem(`${cloudDirtyKey}:${user.id}`, 'true')
+      writeRecoveryValue('dirty', `${cloudDirtyKey}:${user.id}`, 'true')
     } else if (!user && loadedOwnerRef.current === 'guest') {
-      globalThis.localStorage?.setItem(guestDirtyKey, 'true')
+      writeRecoveryValue('dirty', guestDirtyKey, 'true')
       if (globalThis.localStorage?.getItem(guestNudgeSeenKey) !== 'true') setShowGuestNudge(true)
     }
-  }, [user])
+  }, [user, writeRecoveryValue])
   const updateManifest = useCallback((update: (current: PixelWorkspace) => PixelWorkspace) => {
-    markDirty(); setWorkspace(update)
+    setWorkspace((current) => {
+      const next = update(current)
+      if (!validateWorkspaceLimits(next, setSyncError, setStatus)) return current
+      markDirty()
+      return next
+    })
   }, [markDirty])
   const updateSprite = useCallback((id: string, update: (current: PixelProject & { id: string }) => PixelProject) => {
-    markDirty()
     setWorkspace((current) => {
       const sprite = current.sprites.find((item) => item.id === id)
       if (!sprite) return current
       const next = update(sprite)
       if (next === sprite) return current
-      return { ...current, sprites: current.sprites.map((item) => item.id === id ? { ...next, id } : item) }
+      const nextWorkspace = { ...current, sprites: current.sprites.map((item) => item.id === id ? { ...next, id } : item) }
+      if (!validateWorkspaceLimits(nextWorkspace, setSyncError, setStatus)) return current
+      markDirty()
+      return nextWorkspace
     })
   }, [markDirty])
   const createSprite = useCallback(async (project: PixelProject) => {
-    markDirty()
     const id = globalThis.crypto?.randomUUID?.() ?? Math.random().toString(36).slice(2)
-    setWorkspace((current) => ({ ...current, activeSpriteId: id, sprites: [...current.sprites, { ...project, id }] }))
+    const candidate = { ...workspaceRef.current, activeSpriteId: id, sprites: [...workspaceRef.current.sprites, { ...project, id }] }
+    if (!validateWorkspaceLimits(candidate, setSyncError, setStatus)) return false
+    setWorkspace((current) => {
+      const next = { ...current, activeSpriteId: id, sprites: [...current.sprites, { ...project, id }] }
+      if (!validateWorkspaceLimits(next, setSyncError, setStatus)) return current
+      markDirty()
+      return next
+    })
     return true
   }, [markDirty])
   const resolveConflict = useCallback(async (_resource: string, resolution: 'disk' | 'retry') => {
     if (!user || !supabase) return
+    const owner = user.id
+    const epoch = ownerEpochRef.current
+    const projectId = projectIdRef.current
+    if (!projectId || loadedOwnerRef.current !== owner) return
+    const isCurrent = () => ownerEpochRef.current === epoch && loadedOwnerRef.current === owner && projectIdRef.current === projectId
     setConflict(null); setStatus('loading')
     if (resolution === 'disk') {
-      const result = await hydrateCloud(user, workspaceRef.current, projectIdRef.current)
+      const result = await hydrateCloud(user, workspaceRef.current, projectId)
+      if (!isCurrent()) return
       projectIdRef.current = result.projectId; revisionRef.current = result.revision
       if (result.workspace) setWorkspace(result.workspace)
-      globalThis.localStorage?.setItem(`${cloudRevisionKey}:${user.id}`, String(result.revision))
-      globalThis.localStorage?.setItem(`${cloudDirtyKey}:${user.id}`, 'false')
+      writeRecoveryValue('revision', `${cloudRevisionKey}:${owner}`, String(result.revision))
+      writeRecoveryValue('dirty', `${cloudDirtyKey}:${owner}`, 'false')
     } else {
-      const { data, error } = await supabase.from('projects').select('revision').eq('id', projectIdRef.current!).single()
+      const { data, error } = await supabase.from('projects').select('revision').eq('id', projectId).single()
+      if (!isCurrent()) return
       if (error) throw error
       revisionRef.current = data.revision
-      globalThis.localStorage?.setItem(`${cloudDirtyKey}:${user.id}`, 'true')
+      writeRecoveryValue('dirty', `${cloudDirtyKey}:${owner}`, 'true')
       skipSaveRef.current = false
       setWorkspace((current) => ({ ...current }))
     }
-    setStatus('saved')
-  }, [user])
+    if (!isCurrent()) return
+    setStatus(recoveryFailuresRef.current.size ? 'invalid' : resolution === 'retry' ? 'unsaved' : 'saved')
+  }, [user, writeRecoveryValue])
   const copyConflictDraft = useCallback(async (_resource?: string) => { await navigator.clipboard.writeText(JSON.stringify(workspaceRef.current, null, 2)) }, [])
   const exportConflictDraft = useCallback((_resource?: string) => {
     const link = document.createElement('a')
@@ -220,7 +374,7 @@ export function useWorkspace(user: User | null, onExternalSpriteChange?: (id: st
     workspace, hydrated: status !== 'loading', writable: true, diagnostics: [] as FileDiagnostic[], status, syncError, conflict,
     updateManifest, updateSprite, createSprite, resolveConflict, copyConflictDraft, exportConflictDraft, setReconciliationPaused,
     syncNotice, dismissSyncNotice: () => setSyncNotice(null), showGuestNudge,
-    dismissGuestNudge: () => { globalThis.localStorage?.setItem(guestNudgeSeenKey, 'true'); setShowGuestNudge(false) },
+    dismissGuestNudge: () => { trySetLocalValue(guestNudgeSeenKey, 'true'); setShowGuestNudge(false) },
   }
 }
 
@@ -255,6 +409,8 @@ async function hydrateCloud(user: User, local: PixelWorkspace, requestedProjectI
 async function createCloudWorkspace(local: PixelWorkspace, imported: boolean) {
   if (!supabase) throw new Error('Supabase is not configured')
   const cloudLocal = ensureCloudIds(local)
+  assertWorkspaceLimits(cloudLocal)
+  serializedWorkspace(cloudLocal, MAX_WORKSPACE_BYTES)
   const projectId = crypto.randomUUID()
   const { data: revision, error } = await supabase.rpc('create_workspace', {
     p_project_id: projectId,
@@ -270,6 +426,8 @@ async function createCloudWorkspace(local: PixelWorkspace, imported: boolean) {
 async function saveCloudWorkspace(projectId: string, workspace: PixelWorkspace, expectedRevision: number) {
   if (!supabase) throw new Error('Supabase is not configured')
   const cloudWorkspace = ensureCloudIds(workspace)
+  assertWorkspaceLimits(cloudWorkspace)
+  serializedWorkspace(cloudWorkspace, MAX_WORKSPACE_BYTES)
   const { data, error } = await supabase.rpc('save_workspace', {
     p_project_id: projectId,
     p_expected_revision: expectedRevision,
@@ -292,10 +450,67 @@ function spriteRows(projectId: string, workspace: PixelWorkspace) {
 
 class CloudConflictError extends Error {}
 
+class WorkspacePersistenceError extends Error {
+  code: string
+  constructor(limit: number, message?: string, code = 'WORKSPACE_TOO_LARGE') {
+    super(message ?? `This workspace is too large to sync safely (limit ${Math.round(limit / 1024 / 1024)} MB). Export it before reducing its size.`)
+    this.code = code
+  }
+}
+
+export function getWorkspaceLimitError(workspace: PixelWorkspace): SyncError {
+  const structuralError = getWorkspaceStructuralLimitError(workspace)
+  if (structuralError) return structuralError
+  try {
+    serializedWorkspace(workspace, MAX_WORKSPACE_BYTES)
+  } catch (error) {
+    return getSyncError(error)
+  }
+  return null
+}
+
+export function getWorkspaceStructuralLimitError(workspace: PixelWorkspace): SyncError {
+  if (workspace.sprites.length > MAX_WORKSPACE_SPRITES) {
+    return { code: 'WORKSPACE_LIMIT', message: `A workspace can contain at most ${MAX_WORKSPACE_SPRITES} sprites.` }
+  }
+  const pixels = workspace.sprites.reduce((total, sprite) => total + sprite.width * sprite.height, 0)
+  if (pixels > MAX_WORKSPACE_PIXELS) {
+    return { code: 'WORKSPACE_LIMIT', message: `A workspace can contain at most ${MAX_WORKSPACE_PIXELS.toLocaleString()} pixels across all sprites.` }
+  }
+  return null
+}
+
+function assertWorkspaceLimits(workspace: PixelWorkspace) {
+  const error = getWorkspaceLimitError(workspace)
+  if (error) throw new WorkspacePersistenceError(MAX_WORKSPACE_BYTES, error.message, error.code)
+}
+
+function validateWorkspaceLimits(
+  workspace: PixelWorkspace,
+  setError: (error: SyncError) => void,
+  setFileStatus: (status: FileStatus) => void,
+) {
+  const error = getWorkspaceStructuralLimitError(workspace)
+  if (!error) return true
+  setError(error)
+  setFileStatus('invalid')
+  return false
+}
+
 function isNetworkError(error: unknown) {
-  if (!globalThis.navigator?.onLine) return true
+  if (globalThis.navigator && !globalThis.navigator.onLine) return true
   if (error instanceof TypeError) return /fetch|network|load failed/i.test(error.message)
   return false
+}
+
+export function isTransientSyncError(error: unknown) {
+  if (!error || typeof error !== 'object') return isNetworkError(error)
+  const value = error as { status?: unknown; code?: unknown }
+  const status = typeof value.status === 'number' ? value.status : Number(value.status)
+  if (status === 408 || status === 429 || status >= 500) return true
+  if (Number.isFinite(status) && status >= 400) return false
+  if (typeof value.code === 'string' && /^(53300|57P0[123])$/.test(value.code)) return true
+  return isNetworkError(error)
 }
 
 function getSyncError(error: unknown): SyncError {

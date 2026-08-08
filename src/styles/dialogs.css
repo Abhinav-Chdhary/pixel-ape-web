@@ -229,6 +229,28 @@
 .reference-conversion-actions { justify-content: flex-end; gap: 8px; }
 .reference-conversion-actions button:disabled { opacity: .45; cursor: wait; }
 @media (max-width: 720px) { .reference-conversion-dialog { padding: 20px; } .reference-conversion-layout { grid-template-columns: 1fr; } .conversion-preview-frame { min-height: 240px; } }
+.reference-image-dialog { width: min(560px, 100%); padding: 28px; border: 1px solid var(--ink); background: var(--paper); box-shadow: 8px 8px 0 var(--signal); }
+.reference-image-dialog h2 { margin: 0; font-size: var(--text-heading); line-height: 1.1; letter-spacing: -.04em; }
+.reference-image-intro { margin: 9px 0 18px; color: #5d5b54; font-size: var(--text-control); line-height: 1.5; }
+.reference-drop-zone { position: relative; display: grid; place-items: center; min-height: 260px; padding: 28px; border: 2px dashed #716955; background-color: #d8d3c5; background-image: linear-gradient(rgba(92,75,44,.055) 1px, transparent 1px), linear-gradient(90deg, rgba(92,75,44,.055) 1px, transparent 1px); background-size: 18px 18px; transition: border-color 120ms ease, background-color 120ms ease, box-shadow 120ms ease; }
+.reference-drop-zone.reference-drop-active { border-color: var(--signal); background-color: #eee1d5; box-shadow: inset 0 0 0 4px var(--signal); }
+.reference-drop-zone.reference-drop-busy { cursor: wait; opacity: .72; }
+.reference-drop-zone > strong { margin-top: 17px; font-size: var(--text-body); }
+.reference-drop-zone > span { color: #68665f; font: 500 var(--text-micro) DM Mono, monospace; text-transform: uppercase; }
+.reference-drop-zone > button { border: 1px solid var(--ink); background: var(--ink); color: white; padding: 9px 16px; cursor: pointer; font-size: var(--text-control); font-weight: 800; }
+.reference-drop-zone > button:hover:not(:disabled) { background: #34352e; }
+.reference-drop-zone > button:disabled { cursor: wait; opacity: .5; }
+.reference-drop-zone > input { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
+.reference-paste-key { display: flex; align-items: center; gap: 6px; }
+.reference-paste-key kbd { min-width: 34px; padding: 8px 9px; border: 1px solid var(--ink); background: var(--paper); box-shadow: 3px 3px 0 rgba(23,24,18,.28); font: 700 var(--text-control) DM Mono, monospace; text-align: center; }
+.reference-paste-key span, .reference-paste-key b { color: #5d5b54; font: 700 var(--text-micro) DM Mono, monospace; }
+.reference-register { position: absolute; width: 13px; height: 13px; }
+.reference-register::before,.reference-register::after { content: ''; position: absolute; background: #716955; }.reference-register::before { top: 6px; width: 13px; height: 1px; }.reference-register::after { left: 6px; width: 1px; height: 13px; }
+.reference-register-tl { top: 9px; left: 9px; }.reference-register-tr { top: 9px; right: 9px; }.reference-register-bl { bottom: 9px; left: 9px; }.reference-register-br { right: 9px; bottom: 9px; }
+.reference-image-message { min-height: 17px; margin: 9px 0 0; color: #68665f; font: 500 var(--text-micro)/1.4 DM Mono, monospace; }
+.reference-image-message.reference-image-error { color: #8c2720; }
+.reference-image-actions { justify-content: flex-end; margin-top: 15px; }
+@media (max-width: 600px) { .reference-image-dialog { padding: 20px; } .reference-drop-zone { min-height: 230px; padding: 20px; } }
 .background-choice {
   display: flex;
   align-items: center;

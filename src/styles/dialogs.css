@@ -258,6 +258,19 @@
 .conflict-dialog p { color: #5d5b54; font-size: var(--text-body); line-height: 1.5; }
 .file-blocker code { font: 500 var(--text-micro)/1.4 DM Mono, monospace; overflow-wrap: anywhere; }
 .conflict-actions { justify-content: flex-end; gap: 8px; }
+.confirmation-backdrop { z-index: 12; }
+.confirmation-dialog {
+  width: min(460px, 100%);
+  padding: 28px;
+  border: 1px solid var(--ink);
+  background: var(--paper);
+  box-shadow: 8px 8px 0 var(--signal);
+}
+.confirmation-dialog h2 { margin: 0 0 12px; font-size: var(--text-heading); line-height: 1.15; }
+.confirmation-dialog > p:not(.eyebrow) { margin: 0; color: #5d5b54; font-size: var(--text-body); line-height: 1.5; }
+.confirmation-actions { justify-content: flex-end; gap: 8px; }
+.confirmation-actions .danger-button { border-color: #8c2720; background: #8c2720; }
+.confirmation-actions .danger-button:hover { background: #a93329; }
 .auth-dialog { position: relative; width: min(430px, 100%); padding: 28px; border: 1px solid var(--ink); background: var(--paper); box-shadow: 8px 8px 0 var(--signal); }
 .auth-dialog h2 { margin: 0 36px 10px 0; font-size: var(--text-heading); line-height: 1.1; letter-spacing: -.04em; }
 .auth-intro { margin: 0 0 20px; color: #5d5b54; font-size: var(--text-control); line-height: 1.5; }

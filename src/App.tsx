@@ -47,6 +47,12 @@ function App() {
   const [agentPromptCopied, setAgentPromptCopied] = useState(false)
   const [newSpriteOpen, setNewSpriteOpen] = useState(false)
   const [filesOpen, setFilesOpen] = useState(false)
+  const [closedSpriteIds, setClosedSpriteIds] = useState<Set<string>>(() => new Set())
+  const [confirmation, setConfirmation] = useState<
+    | { kind: 'clear' }
+    | { kind: 'delete'; spriteId: string; spriteName: string }
+    | null
+  >(null)
   const [recentSpriteIds, setRecentSpriteIds] = useState<string[]>(() => {
     try {
       const saved = globalThis.localStorage?.getItem(recentSpritesStorageKey)
@@ -74,7 +80,8 @@ function App() {
   const selectionPixelsRef = useRef<Array<string | null> | null>(null)
   const selectionRef = useRef<{ x: number; y: number; width: number; height: number } | null>(null)
   const agentPromptResetTimeoutRef = useRef<number | undefined>(undefined)
-  const project = workspace.sprites.find((sprite) => sprite.id === workspace.activeSpriteId) ?? workspace.sprites[0]
+  const openSprites = workspace.sprites.filter((sprite) => !closedSpriteIds.has(sprite.id))
+  const project = workspace.sprites.find((sprite) => sprite.id === workspace.activeSpriteId) ?? openSprites[0] ?? workspace.sprites[0]
   activeSpriteIdRef.current = project.id
   const zoom = zoomBySprite[project.id] ?? 1600
   const recentSprites = [
@@ -111,12 +118,37 @@ function App() {
   }, [updateSprite])
 
   const switchSprite = (id: string) => {
+    setClosedSpriteIds((current) => {
+      if (!current.has(id)) return current
+      const next = new Set(current)
+      next.delete(id)
+      return next
+    })
     updateManifest((current) => ({ ...current, activeSpriteId: id }))
     setHistory([]); setFuture([]); setCursor({ x: 0, y: 0 })
   }
 
   const closeSprite = (id: string) => {
-    if (workspace.sprites.length <= 1) return
+    const index = openSprites.findIndex((sprite) => sprite.id === id)
+    if (index < 0 || openSprites.length <= 1) return
+    if (workspace.activeSpriteId === id) switchSprite(openSprites[index === 0 ? 1 : index - 1].id)
+    setClosedSpriteIds((current) => new Set(current).add(id))
+    setHistory([]); setFuture([])
+  }
+
+  const reorderSprites = (ids: string[]) => {
+    updateManifest((current) => {
+      if (ids.length !== openSprites.length || new Set(ids).size !== ids.length) return current
+      const spriteById = new Map(current.sprites.map((sprite) => [sprite.id, sprite]))
+      if (ids.some((id) => !spriteById.has(id))) return current
+      let openIndex = 0
+      const sprites = current.sprites.map((sprite) => closedSpriteIds.has(sprite.id) ? sprite : spriteById.get(ids[openIndex++])!)
+      if (sprites.every((sprite, index) => sprite === current.sprites[index])) return current
+      return { ...current, sprites }
+    })
+  }
+
+  const deleteSprite = (id: string) => {
     updateManifest((current) => {
       const index = current.sprites.findIndex((sprite) => sprite.id === id)
       if (index < 0 || current.sprites.length <= 1) return current
@@ -126,18 +158,13 @@ function App() {
         : current.activeSpriteId
       return { ...current, activeSpriteId, sprites }
     })
-    setHistory([]); setFuture([])
-  }
-
-  const reorderSprites = (ids: string[]) => {
-    updateManifest((current) => {
-      if (ids.length !== current.sprites.length || new Set(ids).size !== ids.length) return current
-      const spriteById = new Map(current.sprites.map((sprite) => [sprite.id, sprite]))
-      if (ids.some((id) => !spriteById.has(id))) return current
-      const sprites = ids.map((id) => spriteById.get(id)!)
-      if (sprites.every((sprite, index) => sprite === current.sprites[index])) return current
-      return { ...current, sprites }
+    setClosedSpriteIds((current) => {
+      if (!current.has(id)) return current
+      const next = new Set(current)
+      next.delete(id)
+      return next
     })
+    setHistory([]); setFuture([])
   }
 
   const duplicateSprite = async (sprite: PixelProject & { id: string }) => {
@@ -423,6 +450,11 @@ function App() {
     if (value !== project[dimension]) resize(dimension, value)
   }
   const clear = () => commit((current) => ({ ...current, pixels: current.pixels.map(() => null) }))
+  const confirmAction = () => {
+    if (confirmation?.kind === 'clear') clear()
+    if (confirmation?.kind === 'delete') deleteSprite(confirmation.spriteId)
+    setConfirmation(null)
+  }
   const setClampedZoom = (value: number) => setZoomBySprite((current) => ({ ...current, [activeSpriteIdRef.current]: Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, Math.round(value / 100) * 100)) }))
   const changeZoom = (amount: number) => setZoomBySprite((current) => ({ ...current, [activeSpriteIdRef.current]: Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, (current[activeSpriteIdRef.current] ?? 1600) + amount)) }))
   const agentFile = `pixel-ape/sprites/${project.id}.pixel`
@@ -468,7 +500,7 @@ function App() {
         activeSpriteId={project.id}
         canRedo={Boolean(future.length)}
         canUndo={Boolean(history.length)}
-        sprites={workspace.sprites}
+        sprites={openSprites}
         onSignIn={() => setAuthOpen(true)}
         onSignOut={auth.signOut}
         onAddSprite={() => setNewSpriteOpen(true)}
@@ -513,7 +545,7 @@ function App() {
         tool={tool}
         lineMode={lineMode}
         eraserSize={eraserSize}
-        onClear={clear}
+        onClear={() => setConfirmation({ kind: 'clear' })}
         onEraserSizeChange={setEraserSize}
         onLineModeChange={(mode) => { setLineMode(mode); setCurveStage(null); setLinePreview(null) }}
         onToolChange={setTool}
@@ -521,7 +553,8 @@ function App() {
     />
     {authOpen && <AuthDialog onClose={() => setAuthOpen(false)} />}
     {newSpriteOpen && <div className="dialog-backdrop" role="presentation" onMouseDown={() => setNewSpriteOpen(false)}><section className="new-sprite-dialog" role="dialog" aria-modal="true" aria-labelledby="new-sprite-title" onMouseDown={(event) => event.stopPropagation()}><p className="eyebrow">New sprite tab</p><h2 id="new-sprite-title">Set up your canvas</h2><label>Sprite name<input autoFocus value={newSprite.name} onChange={(event) => setNewSprite({ ...newSprite, name: event.target.value })} /></label><div className="dialog-grid"><label>Width<input type="number" min={MIN_CANVAS_SIZE} max={MAX_CANVAS_SIZE} value={newSpriteSizeDraft.width} onFocus={(event) => event.currentTarget.select()} onChange={(event) => { const value = event.currentTarget.value; setNewSpriteSizeDraft((current) => ({ ...current, width: value })) }} /></label><label>Height<input type="number" min={MIN_CANVAS_SIZE} max={MAX_CANVAS_SIZE} value={newSpriteSizeDraft.height} onFocus={(event) => event.currentTarget.select()} onChange={(event) => { const value = event.currentTarget.value; setNewSpriteSizeDraft((current) => ({ ...current, height: value })) }} /></label></div><p className="canvas-size-note">Canvas dimensions can be from {MIN_CANVAS_SIZE}×{MIN_CANVAS_SIZE} to {MAX_CANVAS_SIZE}×{MAX_CANVAS_SIZE} pixels.</p><fieldset><legend>Background</legend>{backgroundOptions.map((option) => <label key={option.value} className="background-choice"><input type="radio" name="new-background" checked={newSprite.background === option.value} onChange={() => setNewSprite({ ...newSprite, background: option.value })} />{option.label}</label>)}</fieldset><div className="existing-sprites"><div><b>Open an existing file</b><button className="text-button" onClick={() => { setNewSpriteOpen(false); setFilesOpen(true) }}>Browse all files</button></div>{recentSprites.slice(0, 3).map((sprite) => <button key={sprite.id} onClick={() => { switchSprite(sprite.id); setNewSpriteOpen(false) }}><span>{sprite.name || 'Untitled sprite'}</span><small>{sprite.width}×{sprite.height}</small></button>)}</div><div className="dialog-actions"><button className="quiet-button" onClick={() => setNewSpriteOpen(false)}>Cancel</button><button onClick={() => void createSprite()}>Create sprite</button></div></section></div>}
-    {filesOpen && <div className="dialog-backdrop" role="presentation" onMouseDown={() => setFilesOpen(false)}><section className="file-list-dialog" role="dialog" aria-modal="true" aria-labelledby="file-list-title" onMouseDown={(event) => event.stopPropagation()}><p className="eyebrow">Sprite files</p><h2 id="file-list-title">All files</h2><p className="file-list-intro">Open, rename, duplicate, or delete a sprite file.</p><div className="file-list">{workspace.sprites.map((sprite) => <article key={sprite.id} className={sprite.id === project.id ? 'active-file' : ''}><div className="file-name"><input value={sprite.name} onChange={(event) => updateSprite(sprite.id, (current) => ({ ...current, name: event.target.value }))} aria-label={`Rename ${sprite.name || 'sprite'}`} /><small>{sprite.width}×{sprite.height}</small></div><div className="file-actions"><button onClick={() => { switchSprite(sprite.id); setFilesOpen(false) }}>Open</button><button onClick={() => void duplicateSprite(sprite)}>Duplicate</button><button className="delete-file" onClick={() => closeSprite(sprite.id)} disabled={workspace.sprites.length === 1}>Delete</button></div></article>)}</div><div className="dialog-actions"><button className="quiet-button" onClick={() => setFilesOpen(false)}>Done</button></div></section></div>}
+    {filesOpen && <div className="dialog-backdrop" role="presentation" onMouseDown={() => setFilesOpen(false)}><section className="file-list-dialog" role="dialog" aria-modal="true" aria-labelledby="file-list-title" onMouseDown={(event) => event.stopPropagation()}><p className="eyebrow">Sprite files</p><h2 id="file-list-title">All files</h2><p className="file-list-intro">Open, rename, duplicate, or delete a sprite file.</p><div className="file-list">{workspace.sprites.map((sprite) => <article key={sprite.id} className={sprite.id === project.id ? 'active-file' : ''}><div className="file-name"><input value={sprite.name} onChange={(event) => updateSprite(sprite.id, (current) => ({ ...current, name: event.target.value }))} aria-label={`Rename ${sprite.name || 'sprite'}`} /><small>{sprite.width}×{sprite.height}</small></div><div className="file-actions"><button onClick={() => { switchSprite(sprite.id); setFilesOpen(false) }}>Open</button><button onClick={() => void duplicateSprite(sprite)}>Duplicate</button><button className="delete-file" onClick={() => setConfirmation({ kind: 'delete', spriteId: sprite.id, spriteName: sprite.name || 'Untitled sprite' })} disabled={workspace.sprites.length === 1}>Delete</button></div></article>)}</div><div className="dialog-actions"><button className="quiet-button" onClick={() => setFilesOpen(false)}>Done</button></div></section></div>}
+    {confirmation && <div className="dialog-backdrop confirmation-backdrop" role="presentation" onMouseDown={() => setConfirmation(null)}><section className="confirmation-dialog" role="alertdialog" aria-modal="true" aria-labelledby="confirmation-title" aria-describedby="confirmation-description" onMouseDown={(event) => event.stopPropagation()}><p className="eyebrow">Please confirm</p><h2 id="confirmation-title">{confirmation.kind === 'clear' ? 'Clear this canvas?' : `Delete “${confirmation.spriteName}”?`}</h2><p id="confirmation-description">{confirmation.kind === 'clear' ? 'Every pixel on this sprite will be removed. You can undo this action afterward.' : 'This permanently removes the sprite from your files and cannot be undone.'}</p><div className="dialog-actions confirmation-actions"><button className="quiet-button" onClick={() => setConfirmation(null)}>Cancel</button><button className="danger-button" onClick={confirmAction}>{confirmation.kind === 'clear' ? 'Clear canvas' : 'Delete sprite'}</button></div></section></div>}
     {!hydrated && <div className="file-blocker file-loader" role="status" aria-label="Loading workspace"><span className="workspace-spinner" /></div>}
     {hydrated && !writable && <div className="file-blocker" role="alert"><section><p className="eyebrow">Project files need attention</p><h2>Editing is paused until the files are valid.</h2>{diagnostics.slice(0, 4).map((item) => <p key={`${item.file}:${item.line}:${item.column}:${item.code}`}><code>{item.file}{item.line ? `:${item.line}:${item.column}` : ''}</code><br />{item.message}</p>)}</section></div>}
     {conflict && <div className="dialog-backdrop" role="presentation"><section className="conflict-dialog" role="dialog" aria-modal="true" aria-labelledby="conflict-title"><p className="eyebrow">File conflict</p><h2 id="conflict-title">Both the browser and disk changed {conflict.resource === 'manifest' ? 'the workspace' : conflict.resource}.</h2><p>Your browser draft is still safe. Retry overwrites the latest disk version; use disk discards this browser draft.</p><div className="dialog-actions conflict-actions"><button className="quiet-button" onClick={() => void copyConflictDraft(conflict.resource)}>Copy draft</button><button className="quiet-button" onClick={() => exportConflictDraft(conflict.resource)}>Export draft</button><button className="quiet-button" onClick={() => resolveConflict(conflict.resource, 'disk')}>Use disk</button><button onClick={() => resolveConflict(conflict.resource, 'retry')}>Retry draft</button></div></section></div>}

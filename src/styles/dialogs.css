@@ -261,7 +261,8 @@
 .auth-dialog input { height: 38px; padding: 0 10px; border: 1px solid #8f8b80; background: white; color: var(--ink); font: inherit; }
 .oauth-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 .oauth-actions button, .auth-submit { min-height: 40px; padding: 8px 12px; border: 1px solid var(--ink); background: var(--ink); color: white; cursor: pointer; font-weight: 800; }
-.oauth-actions button { background: #f1eee5; color: var(--ink); }
+.oauth-actions button { display: flex; align-items: center; justify-content: center; gap: 8px; background: #f1eee5; color: var(--ink); }
+.oauth-icon { flex: 0 0 auto; width: 20px; height: 20px; }
 .oauth-actions button:hover, .auth-submit:hover { background: white; color: var(--ink); }
 .oauth-actions button:disabled, .auth-submit:disabled { opacity: .5; cursor: default; }
 .auth-divider { display: flex; align-items: center; gap: 10px; margin: 18px 0; color: #68665f; font: 600 var(--text-micro) DM Mono, monospace; text-transform: uppercase; }

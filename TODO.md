@@ -18,7 +18,7 @@ Medium:
 [X] an empty slot when selected, doesn't reflect correctly in palette's selected color area like 'foreground'. foreground shows some previously selected color
 
 Hard:
-[ ] plan db schema and apis for user accounts, sprites, palettes
+[X] plan db schema and apis for user accounts, sprites, palettes
 [ ] import of pallete packages
 [ ] choosing default color pallete among the existing ones
 [ ] adding more tools?

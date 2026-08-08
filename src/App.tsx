@@ -30,7 +30,7 @@ function App() {
     if (id === activeSpriteIdRef.current) { setHistory([]); setFuture([]) }
   }, [])
   const sync = useWorkspace(auth.user, handleExternalSpriteChange)
-  const { workspace, hydrated, writable, diagnostics, status: fileStatus, conflict, updateManifest, updateSprite, createSprite: persistNewSprite, resolveConflict, copyConflictDraft, exportConflictDraft, setReconciliationPaused, syncNotice, dismissSyncNotice, showGuestNudge, dismissGuestNudge } = sync
+  const { workspace, hydrated, writable, diagnostics, status: fileStatus, syncError, conflict, updateManifest, updateSprite, createSprite: persistNewSprite, resolveConflict, copyConflictDraft, exportConflictDraft, setReconciliationPaused, syncNotice, dismissSyncNotice, showGuestNudge, dismissGuestNudge } = sync
   const [tool, setTool] = useState<Tool>('pencil')
   const [eraserSize, setEraserSize] = useState(() => Number(globalThis.localStorage?.getItem('pixel-ape:eraser-size')) || 1)
   const [canvasHovered, setCanvasHovered] = useState(false)
@@ -448,7 +448,7 @@ function App() {
 
   return <>
     <div className={`file-status file-status-${fileStatus}`} role="status">
-      <span>{fileStatus === 'loading' ? 'Loading…' : fileStatus === 'saving' ? 'Saving…' : fileStatus === 'unsaved' ? 'Unsaved' : fileStatus === 'conflict' ? 'Sync needs attention' : fileStatus === 'invalid' ? 'Invalid workspace' : fileStatus === 'offline' ? 'Offline' : fileStatus === 'sync-error' ? 'Sync setup needed' : 'Saved'}</span>
+      <span title={fileStatus === 'sync-error' ? syncError?.message : undefined}>{fileStatus === 'loading' ? 'Loading…' : fileStatus === 'saving' ? 'Saving…' : fileStatus === 'unsaved' ? 'Unsaved' : fileStatus === 'conflict' ? 'Sync needs attention' : fileStatus === 'invalid' ? 'Invalid workspace' : fileStatus === 'offline' ? 'Offline' : fileStatus === 'sync-error' ? `Sync error${syncError?.code ? ` (${syncError.code})` : ''}: ${syncError?.message ?? 'Unknown error'}` : 'Saved'}</span>
     </div>
     {showGuestNudge && !auth.user && <aside className="sync-notice sync-notice-local" aria-live="polite">
       <span className="sync-notice-mark" aria-hidden="true"><CloudUploadIcon /></span>

@@ -7,6 +7,7 @@ import type { PixelProject, PixelWorkspace } from '../types'
 type FileDiagnostic = { severity: 'error' | 'warning'; code: string; file: string; line: number; column: number; message: string }
 type Conflict = { resource: 'manifest' | string } | null
 type FileStatus = 'loading' | 'saved' | 'saving' | 'unsaved' | 'conflict' | 'invalid' | 'offline' | 'sync-error'
+export type SyncError = { code?: string; message: string } | null
 type ProjectRow = { id: string; name: string; active_sprite_id: string | null; palette: unknown; revision: number }
 type SpriteRow = { id: string; position: number; name: string; format_version: number; width: number; height: number; background: string; pixels: unknown }
 
@@ -30,6 +31,7 @@ function readLocalWorkspace(key = storageKey) {
 export function useWorkspace(user: User | null, onExternalSpriteChange?: (id: string) => void) {
   const [workspace, setWorkspace] = useState<PixelWorkspace>(readLocalWorkspace)
   const [status, setStatus] = useState<FileStatus>('saved')
+  const [syncError, setSyncError] = useState<SyncError>(null)
   const [conflict, setConflict] = useState<Conflict>(null)
   const [cloudReady, setCloudReady] = useState(false)
   const [syncNotice, setSyncNotice] = useState<'created' | 'imported' | null>(null)
@@ -55,6 +57,7 @@ export function useWorkspace(user: User | null, onExternalSpriteChange?: (id: st
   useEffect(() => {
     let active = true
     setConflict(null)
+    setSyncError(null)
     const owner = user?.id ?? 'guest'
     loadedOwnerRef.current = null
     if (!user || !supabase) {
@@ -118,7 +121,8 @@ export function useWorkspace(user: User | null, onExternalSpriteChange?: (id: st
       loadedOwnerRef.current = owner
       setWorkspace(local)
       setCloudReady(false)
-      setStatus(isNetworkError(error) ? 'offline' : 'sync-error')
+      if (isNetworkError(error)) setStatus('offline')
+      else { setSyncError(getSyncError(error)); setStatus('sync-error') }
     })
     return () => { active = false }
   }, [onExternalSpriteChange, user])
@@ -146,7 +150,8 @@ export function useWorkspace(user: User | null, onExternalSpriteChange?: (id: st
         if (error instanceof CloudConflictError) {
           setConflict({ resource: 'manifest' })
           setStatus('conflict')
-        } else setStatus(isNetworkError(error) ? 'offline' : 'sync-error')
+        } else if (isNetworkError(error)) setStatus('offline')
+        else { setSyncError(getSyncError(error)); setStatus('sync-error') }
       })
     }, 1000)
     return () => window.clearTimeout(timer)
@@ -212,7 +217,7 @@ export function useWorkspace(user: User | null, onExternalSpriteChange?: (id: st
   }, [])
 
   return {
-    workspace, hydrated: status !== 'loading', writable: true, diagnostics: [] as FileDiagnostic[], status, conflict,
+    workspace, hydrated: status !== 'loading', writable: true, diagnostics: [] as FileDiagnostic[], status, syncError, conflict,
     updateManifest, updateSprite, createSprite, resolveConflict, copyConflictDraft, exportConflictDraft, setReconciliationPaused,
     syncNotice, dismissSyncNotice: () => setSyncNotice(null), showGuestNudge,
     dismissGuestNudge: () => { globalThis.localStorage?.setItem(guestNudgeSeenKey, 'true'); setShowGuestNudge(false) },
@@ -291,6 +296,15 @@ function isNetworkError(error: unknown) {
   if (!globalThis.navigator?.onLine) return true
   if (error instanceof TypeError) return /fetch|network|load failed/i.test(error.message)
   return false
+}
+
+function getSyncError(error: unknown): SyncError {
+  if (!error || typeof error !== 'object') return { message: 'An unknown sync error occurred.' }
+  const value = error as { code?: unknown; message?: unknown }
+  return {
+    code: typeof value.code === 'string' ? value.code : undefined,
+    message: typeof value.message === 'string' ? value.message : 'An unknown sync error occurred.',
+  }
 }
 
 function ensureCloudIds(workspace: PixelWorkspace) {

@@ -10,7 +10,18 @@
 .actions button:disabled { opacity: .35; cursor: default; }
 .iconButton { width: 36px; padding: 0; }
 .filesButton { padding: 0 10px; }
-.accountButton { max-width: 150px; padding: 0 10px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.accountMenu { position: relative; }
+.accountButton, .accountLoading { width: 36px; padding: 0; border-radius: 50%; }
+.accountButton { background: var(--ink) !important; border-color: var(--ink) !important; color: white; font: 800 var(--text-control)/1 DM Mono, monospace; }
+.accountButton:hover:not(:disabled) { background: #34352e !important; border-color: #34352e !important; }
+.signInButton { padding: 0 10px; }
+.accountLoading { display: grid; place-items: center; border: 1px solid #aaa69a; background: #f1eee5; }
+.accountLoading span { width: 12px; height: 12px; border: 2px solid #aaa69a; border-right-color: var(--ink); border-radius: 50%; animation: account-spin .7s linear infinite; }
+.accountPopover { position: absolute; z-index: 30; top: calc(100% + 8px); right: 0; width: min(280px, calc(100vw - 24px)); padding: 10px; border: 1px solid var(--ink); background: var(--paper); box-shadow: 4px 4px 0 rgba(23,24,18,.2); display: grid; gap: 5px; }
+.accountPopoverLabel { color: #5d5b54; font: 700 var(--text-micro)/1 DM Mono, monospace; text-transform: uppercase; letter-spacing: .04em; }
+.accountPopover strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--text-control); }
+.accountPopover button { width: 100%; margin-top: 5px; padding: 0 10px; justify-content: flex-start; }
+@keyframes account-spin { to { transform: rotate(1turn); } }
 .iconButton svg { width: 18px; height: 18px; }
 .agentButton { margin-left: 6px; padding: 0 12px; }
 .agentButtonTooltip { position: relative; display: inline-flex; }
@@ -20,4 +31,4 @@
 .exportButton { padding: 0 12px; color: white; background: var(--ink) !important; border-color: var(--ink) !important; }
 .exportButton:hover:not(:disabled) { color: white; background: #34352e !important; border-color: #34352e !important; }
 @media (max-width: 850px) { .topbar { gap: 9px; } .agentButton { display: none !important; } }
-@media (max-width: 580px) { .topbar { gap: 6px; padding: 0 9px; } .iconButton, .filesButton, .accountButton { display: none !important; } .exportButton { width: 36px; padding: 0; font-size: 0 !important; } }
+@media (max-width: 580px) { .topbar { gap: 6px; padding: 0 9px; } .iconButton, .filesButton, .accountMenu, .accountLoading { display: none !important; } .exportButton { width: 36px; padding: 0; font-size: 0 !important; } }

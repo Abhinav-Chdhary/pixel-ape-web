@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { AgentIcon, CopyIcon } from './icons'
+import { AgentIcon, CloudUploadIcon, CopyIcon } from './icons'
 import { TopBar } from './components/03_compounds/TopBar'
 import { PalettePanel } from './components/04_organisms/PalettePanel'
 import { ToolsPanel } from './components/04_organisms/ToolsPanel'
@@ -30,7 +30,7 @@ function App() {
     if (id === activeSpriteIdRef.current) { setHistory([]); setFuture([]) }
   }, [])
   const sync = useWorkspace(auth.user, handleExternalSpriteChange)
-  const { workspace, hydrated, writable, diagnostics, status: fileStatus, conflict, updateManifest, updateSprite, createSprite: persistNewSprite, resolveConflict, copyConflictDraft, exportConflictDraft, setReconciliationPaused } = sync
+  const { workspace, hydrated, writable, diagnostics, status: fileStatus, conflict, updateManifest, updateSprite, createSprite: persistNewSprite, resolveConflict, copyConflictDraft, exportConflictDraft, setReconciliationPaused, syncNotice, dismissSyncNotice, showGuestNudge, dismissGuestNudge } = sync
   const [tool, setTool] = useState<Tool>('pencil')
   const [eraserSize, setEraserSize] = useState(() => Number(globalThis.localStorage?.getItem('pixel-ape:eraser-size')) || 1)
   const [canvasHovered, setCanvasHovered] = useState(false)
@@ -448,16 +448,29 @@ function App() {
 
   return <>
     <div className={`file-status file-status-${fileStatus}`} role="status">
-      {fileStatus === 'loading' ? 'Loading workspace…' : fileStatus === 'saving' ? 'Saving…' : fileStatus === 'unsaved' ? 'Unsaved changes' : fileStatus === 'conflict' ? 'Cloud conflict' : fileStatus === 'invalid' ? 'Invalid workspace' : fileStatus === 'offline' ? 'Offline — draft safe' : auth.user ? 'Saved to cloud' : 'Saved on this device'}
+      <span>{fileStatus === 'loading' ? 'Loading…' : fileStatus === 'saving' ? 'Saving…' : fileStatus === 'unsaved' ? 'Unsaved' : fileStatus === 'conflict' ? 'Sync needs attention' : fileStatus === 'invalid' ? 'Invalid workspace' : fileStatus === 'offline' ? 'Offline' : fileStatus === 'sync-error' ? 'Sync setup needed' : 'Saved'}</span>
     </div>
+    {showGuestNudge && !auth.user && <aside className="sync-notice sync-notice-local" aria-live="polite">
+      <span className="sync-notice-mark" aria-hidden="true"><CloudUploadIcon /></span>
+      <p><b>Your work is safe in this browser.</b><span>Sign in to back it up.</span></p>
+      <button className="sync-notice-action" onClick={() => setAuthOpen(true)}>Sign in to sync</button>
+      <button className="sync-notice-close" onClick={dismissGuestNudge} aria-label="Dismiss sync reminder">×</button>
+    </aside>}
+    {syncNotice && auth.user && <aside className="sync-notice sync-notice-success" aria-live="polite">
+      <span className="sync-notice-mark" aria-hidden="true">✓</span>
+      <p><b>{syncNotice === 'imported' ? 'Local artwork added to your account.' : 'Artwork saved to your account.'}</b><span>Changes will now sync automatically.</span></p>
+      <button className="sync-notice-close" onClick={dismissSyncNotice} aria-label="Dismiss sync confirmation">×</button>
+    </aside>}
     <StudioTemplate
       topBar={<TopBar
-        accountLabel={auth.loading ? 'Loading…' : auth.user?.email ?? 'Sign in'}
+        accountEmail={auth.user?.email ?? null}
+        accountLoading={auth.loading}
         activeSpriteId={project.id}
         canRedo={Boolean(future.length)}
         canUndo={Boolean(history.length)}
         sprites={workspace.sprites}
-        onAccount={() => { if (auth.user) void auth.signOut(); else setAuthOpen(true) }}
+        onSignIn={() => setAuthOpen(true)}
+        onSignOut={auth.signOut}
         onAddSprite={() => setNewSpriteOpen(true)}
         onCloseSprite={closeSprite}
         onExport={exportPng}
@@ -509,7 +522,8 @@ function App() {
     {authOpen && <AuthDialog onClose={() => setAuthOpen(false)} />}
     {newSpriteOpen && <div className="dialog-backdrop" role="presentation" onMouseDown={() => setNewSpriteOpen(false)}><section className="new-sprite-dialog" role="dialog" aria-modal="true" aria-labelledby="new-sprite-title" onMouseDown={(event) => event.stopPropagation()}><p className="eyebrow">New sprite tab</p><h2 id="new-sprite-title">Set up your canvas</h2><label>Sprite name<input autoFocus value={newSprite.name} onChange={(event) => setNewSprite({ ...newSprite, name: event.target.value })} /></label><div className="dialog-grid"><label>Width<input type="number" min={MIN_CANVAS_SIZE} max={MAX_CANVAS_SIZE} value={newSpriteSizeDraft.width} onFocus={(event) => event.currentTarget.select()} onChange={(event) => { const value = event.currentTarget.value; setNewSpriteSizeDraft((current) => ({ ...current, width: value })) }} /></label><label>Height<input type="number" min={MIN_CANVAS_SIZE} max={MAX_CANVAS_SIZE} value={newSpriteSizeDraft.height} onFocus={(event) => event.currentTarget.select()} onChange={(event) => { const value = event.currentTarget.value; setNewSpriteSizeDraft((current) => ({ ...current, height: value })) }} /></label></div><p className="canvas-size-note">Canvas dimensions can be from {MIN_CANVAS_SIZE}×{MIN_CANVAS_SIZE} to {MAX_CANVAS_SIZE}×{MAX_CANVAS_SIZE} pixels.</p><fieldset><legend>Background</legend>{backgroundOptions.map((option) => <label key={option.value} className="background-choice"><input type="radio" name="new-background" checked={newSprite.background === option.value} onChange={() => setNewSprite({ ...newSprite, background: option.value })} />{option.label}</label>)}</fieldset><div className="existing-sprites"><div><b>Open an existing file</b><button className="text-button" onClick={() => { setNewSpriteOpen(false); setFilesOpen(true) }}>Browse all files</button></div>{recentSprites.slice(0, 3).map((sprite) => <button key={sprite.id} onClick={() => { switchSprite(sprite.id); setNewSpriteOpen(false) }}><span>{sprite.name || 'Untitled sprite'}</span><small>{sprite.width}×{sprite.height}</small></button>)}</div><div className="dialog-actions"><button className="quiet-button" onClick={() => setNewSpriteOpen(false)}>Cancel</button><button onClick={() => void createSprite()}>Create sprite</button></div></section></div>}
     {filesOpen && <div className="dialog-backdrop" role="presentation" onMouseDown={() => setFilesOpen(false)}><section className="file-list-dialog" role="dialog" aria-modal="true" aria-labelledby="file-list-title" onMouseDown={(event) => event.stopPropagation()}><p className="eyebrow">Sprite files</p><h2 id="file-list-title">All files</h2><p className="file-list-intro">Open, rename, duplicate, or delete a sprite file.</p><div className="file-list">{workspace.sprites.map((sprite) => <article key={sprite.id} className={sprite.id === project.id ? 'active-file' : ''}><div className="file-name"><input value={sprite.name} onChange={(event) => updateSprite(sprite.id, (current) => ({ ...current, name: event.target.value }))} aria-label={`Rename ${sprite.name || 'sprite'}`} /><small>{sprite.width}×{sprite.height}</small></div><div className="file-actions"><button onClick={() => { switchSprite(sprite.id); setFilesOpen(false) }}>Open</button><button onClick={() => void duplicateSprite(sprite)}>Duplicate</button><button className="delete-file" onClick={() => closeSprite(sprite.id)} disabled={workspace.sprites.length === 1}>Delete</button></div></article>)}</div><div className="dialog-actions"><button className="quiet-button" onClick={() => setFilesOpen(false)}>Done</button></div></section></div>}
-    {(!hydrated || !writable) && <div className="file-blocker" role="alert"><section><p className="eyebrow">Project files need attention</p><h2>{!hydrated ? 'The workspace could not be loaded.' : 'Editing is paused until the files are valid.'}</h2>{diagnostics.slice(0, 4).map((item) => <p key={`${item.file}:${item.line}:${item.column}:${item.code}`}><code>{item.file}{item.line ? `:${item.line}:${item.column}` : ''}</code><br />{item.message}</p>)}{!diagnostics.length && <p>Waiting for the local Pixel Ape file server.</p>}</section></div>}
+    {!hydrated && <div className="file-blocker file-loader" role="status" aria-label="Loading workspace"><span className="workspace-spinner" /></div>}
+    {hydrated && !writable && <div className="file-blocker" role="alert"><section><p className="eyebrow">Project files need attention</p><h2>Editing is paused until the files are valid.</h2>{diagnostics.slice(0, 4).map((item) => <p key={`${item.file}:${item.line}:${item.column}:${item.code}`}><code>{item.file}{item.line ? `:${item.line}:${item.column}` : ''}</code><br />{item.message}</p>)}</section></div>}
     {conflict && <div className="dialog-backdrop" role="presentation"><section className="conflict-dialog" role="dialog" aria-modal="true" aria-labelledby="conflict-title"><p className="eyebrow">File conflict</p><h2 id="conflict-title">Both the browser and disk changed {conflict.resource === 'manifest' ? 'the workspace' : conflict.resource}.</h2><p>Your browser draft is still safe. Retry overwrites the latest disk version; use disk discards this browser draft.</p><div className="dialog-actions conflict-actions"><button className="quiet-button" onClick={() => void copyConflictDraft(conflict.resource)}>Copy draft</button><button className="quiet-button" onClick={() => exportConflictDraft(conflict.resource)}>Export draft</button><button className="quiet-button" onClick={() => resolveConflict(conflict.resource, 'disk')}>Use disk</button><button onClick={() => resolveConflict(conflict.resource, 'retry')}>Retry draft</button></div></section></div>}
     {agentOpen &&
       <div className="dialog-backdrop" role="presentation" onMouseDown={closeAgentGuide}>

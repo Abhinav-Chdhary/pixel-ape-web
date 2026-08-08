@@ -52,6 +52,7 @@ export function AuthDialog({ onClose }: AuthDialogProps) {
     <section className="auth-dialog" role="dialog" aria-modal="true" aria-labelledby="auth-title" onMouseDown={(event) => event.stopPropagation()}>
       <p className="eyebrow">Pixel Ape cloud</p>
       <h2 id="auth-title">{mode === 'signin' ? 'Sign in to sync your work' : 'Create your account'}</h2>
+      <p className="auth-intro">Your local artwork will be added to your account automatically. Continue editing on any device after you sign in.</p>
       {!isSupabaseConfigured
         ? <p className="auth-message auth-error">Add the Supabase variables from <code>.env.example</code>, then restart the app.</p>
         : <>

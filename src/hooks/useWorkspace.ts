@@ -6,7 +6,7 @@ import type { PixelProject, PixelWorkspace } from '../types'
 
 type FileDiagnostic = { severity: 'error' | 'warning'; code: string; file: string; line: number; column: number; message: string }
 type Conflict = { resource: 'manifest' | string } | null
-type FileStatus = 'loading' | 'saved' | 'saving' | 'unsaved' | 'conflict' | 'invalid' | 'offline'
+type FileStatus = 'loading' | 'saved' | 'saving' | 'unsaved' | 'conflict' | 'invalid' | 'offline' | 'sync-error'
 type ProjectRow = { id: string; name: string; active_sprite_id: string | null; palette: unknown; revision: number }
 type SpriteRow = { id: string; position: number; name: string; format_version: number; width: number; height: number; background: string; pixels: unknown }
 
@@ -14,6 +14,9 @@ const storageKey = 'pixel-ape-web:workspace'
 const cloudProjectKey = 'pixel-ape-web:cloud-project'
 const cloudRevisionKey = 'pixel-ape-web:cloud-revision'
 const cloudDirtyKey = 'pixel-ape-web:cloud-dirty'
+const guestDirtyKey = 'pixel-ape-web:guest-dirty'
+const guestNudgeSeenKey = 'pixel-ape-web:guest-sync-nudge-seen'
+const guestImportHandledKey = 'pixel-ape-web:guest-import-handled'
 
 function readLocalWorkspace(key = storageKey) {
   try {
@@ -29,6 +32,8 @@ export function useWorkspace(user: User | null, onExternalSpriteChange?: (id: st
   const [status, setStatus] = useState<FileStatus>('saved')
   const [conflict, setConflict] = useState<Conflict>(null)
   const [cloudReady, setCloudReady] = useState(false)
+  const [syncNotice, setSyncNotice] = useState<'created' | 'imported' | null>(null)
+  const [showGuestNudge, setShowGuestNudge] = useState(false)
   const projectIdRef = useRef<string | null>(null)
   const revisionRef = useRef(0)
   const saveSequenceRef = useRef(Promise.resolve())
@@ -67,18 +72,28 @@ export function useWorkspace(user: User | null, onExternalSpriteChange?: (id: st
     skipSaveRef.current = true
     const userStorageKey = `${storageKey}:${user.id}`
     const savedUserWorkspace = globalThis.localStorage?.getItem(userStorageKey)
-    const local = savedUserWorkspace ? readLocalWorkspace(userStorageKey) : ensureCloudIds(workspaceRef.current)
+    const guestWorkspace = readLocalWorkspace()
+    const shouldImportGuest = globalThis.localStorage?.getItem(guestDirtyKey) === 'true'
+      || (globalThis.localStorage?.getItem(guestImportHandledKey) !== 'true' && hasMeaningfulArtwork(guestWorkspace))
+    const local = shouldImportGuest
+      ? ensureCloudIds(guestWorkspace)
+      : savedUserWorkspace ? readLocalWorkspace(userStorageKey) : ensureCloudIds(workspaceRef.current)
     const storedRevision = Number(globalThis.localStorage?.getItem(`${cloudRevisionKey}:${user.id}`)) || 0
     const hasDirtyDraft = globalThis.localStorage?.getItem(`${cloudDirtyKey}:${user.id}`) === 'true'
     const hydration = hydrationRef.current?.owner === owner
       ? hydrationRef.current.promise
-      : hydrateCloud(user, local)
+      : hydrateCloud(user, local, undefined, shouldImportGuest)
     hydrationRef.current = { owner, promise: hydration }
     void hydration.then((result) => {
       if (!active) return
       projectIdRef.current = result.projectId
       revisionRef.current = result.revision
       globalThis.localStorage?.setItem(cloudProjectKey, result.projectId)
+      if (result.created || result.imported) {
+        globalThis.localStorage?.setItem(guestDirtyKey, 'false')
+        globalThis.localStorage?.setItem(guestImportHandledKey, 'true')
+        setSyncNotice(result.imported ? 'imported' : 'created')
+      }
       const hasOfflineDraft = Boolean(savedUserWorkspace && hasDirtyDraft && storedRevision === result.revision && result.workspace)
       const hasDivergedDraft = Boolean(savedUserWorkspace && hasDirtyDraft && storedRevision !== result.revision && result.workspace)
       const nextWorkspace = ensureCloudIds(hasOfflineDraft || hasDivergedDraft || !result.workspace ? local : result.workspace)
@@ -98,12 +113,12 @@ export function useWorkspace(user: User | null, onExternalSpriteChange?: (id: st
         skipSaveRef.current = false
         if (hasOfflineDraft) setWorkspace((current) => ({ ...current }))
       }, 0)
-    }).catch(() => {
+    }).catch((error: unknown) => {
       if (!active) return
       loadedOwnerRef.current = owner
       setWorkspace(local)
       setCloudReady(false)
-      setStatus('offline')
+      setStatus(isNetworkError(error) ? 'offline' : 'sync-error')
     })
     return () => { active = false }
   }, [onExternalSpriteChange, user])
@@ -131,7 +146,7 @@ export function useWorkspace(user: User | null, onExternalSpriteChange?: (id: st
         if (error instanceof CloudConflictError) {
           setConflict({ resource: 'manifest' })
           setStatus('conflict')
-        } else setStatus('offline')
+        } else setStatus(isNetworkError(error) ? 'offline' : 'sync-error')
       })
     }, 1000)
     return () => window.clearTimeout(timer)
@@ -139,7 +154,12 @@ export function useWorkspace(user: User | null, onExternalSpriteChange?: (id: st
 
   const markDirty = useCallback(() => {
     mutationGenerationRef.current += 1
-    if (user && loadedOwnerRef.current === user.id) globalThis.localStorage?.setItem(`${cloudDirtyKey}:${user.id}`, 'true')
+    if (user && loadedOwnerRef.current === user.id) {
+      globalThis.localStorage?.setItem(`${cloudDirtyKey}:${user.id}`, 'true')
+    } else if (!user && loadedOwnerRef.current === 'guest') {
+      globalThis.localStorage?.setItem(guestDirtyKey, 'true')
+      if (globalThis.localStorage?.getItem(guestNudgeSeenKey) !== 'true') setShowGuestNudge(true)
+    }
   }, [user])
   const updateManifest = useCallback((update: (current: PixelWorkspace) => PixelWorkspace) => {
     markDirty(); setWorkspace(update)
@@ -194,10 +214,12 @@ export function useWorkspace(user: User | null, onExternalSpriteChange?: (id: st
   return {
     workspace, hydrated: status !== 'loading', writable: true, diagnostics: [] as FileDiagnostic[], status, conflict,
     updateManifest, updateSprite, createSprite, resolveConflict, copyConflictDraft, exportConflictDraft, setReconciliationPaused,
+    syncNotice, dismissSyncNotice: () => setSyncNotice(null), showGuestNudge,
+    dismissGuestNudge: () => { globalThis.localStorage?.setItem(guestNudgeSeenKey, 'true'); setShowGuestNudge(false) },
   }
 }
 
-async function hydrateCloud(user: User, local: PixelWorkspace, requestedProjectId?: string | null) {
+async function hydrateCloud(user: User, local: PixelWorkspace, requestedProjectId?: string | null, importLocal = false) {
   if (!supabase) throw new Error('Supabase is not configured')
   let query = supabase.from('projects').select('id,name,active_sprite_id,palette,revision').eq('owner_id', user.id).is('deleted_at', null)
   const remembered = requestedProjectId ?? globalThis.localStorage?.getItem(cloudProjectKey)
@@ -209,18 +231,9 @@ async function hydrateCloud(user: User, local: PixelWorkspace, requestedProjectI
     if (fallback.error) throw fallback.error
     data = fallback.data
   }
+  if (data && importLocal) return createCloudWorkspace(local, true)
   if (!data) {
-    const cloudLocal = ensureCloudIds(local)
-    const projectId = crypto.randomUUID()
-    const { data: revision, error: createError } = await supabase.rpc('create_workspace', {
-      p_project_id: projectId,
-      p_name: cloudLocal.sprites[0]?.name || 'My pixel art',
-      p_active_sprite_id: cloudLocal.activeSpriteId,
-      p_palette: cloudLocal.palette,
-      p_sprites: spriteRows(projectId, cloudLocal).map(({ project_id: _projectId, ...sprite }) => sprite),
-    })
-    if (createError) throw createError
-    return { projectId, revision: Number(revision) || 1, workspace: null as PixelWorkspace | null }
+    return createCloudWorkspace(local, false)
   }
   const { data: sprites, error: spriteError } = await supabase.from('sprites').select('id,position,name,format_version,width,height,background,pixels').eq('project_id', data.id).order('position').returns<SpriteRow[]>()
   if (spriteError) throw spriteError
@@ -231,7 +244,22 @@ async function hydrateCloud(user: User, local: PixelWorkspace, requestedProjectI
     palette: data.palette,
     sprites: sprites.map((sprite) => ({ version: sprite.format_version, id: sprite.id, name: sprite.name, width: sprite.width, height: sprite.height, background: sprite.background, pixels: sprite.pixels })),
   })
-  return { projectId: data.id, revision: data.revision, workspace }
+  return { projectId: data.id, revision: data.revision, workspace, created: false, imported: false }
+}
+
+async function createCloudWorkspace(local: PixelWorkspace, imported: boolean) {
+  if (!supabase) throw new Error('Supabase is not configured')
+  const cloudLocal = ensureCloudIds(local)
+  const projectId = crypto.randomUUID()
+  const { data: revision, error } = await supabase.rpc('create_workspace', {
+    p_project_id: projectId,
+    p_name: cloudLocal.sprites[0]?.name || 'My pixel art',
+    p_active_sprite_id: cloudLocal.activeSpriteId,
+    p_palette: cloudLocal.palette,
+    p_sprites: spriteRows(projectId, cloudLocal).map(({ project_id: _projectId, ...sprite }) => sprite),
+  })
+  if (error) throw error
+  return { projectId, revision: Number(revision) || 1, workspace: null as PixelWorkspace | null, created: !imported, imported }
 }
 
 async function saveCloudWorkspace(projectId: string, workspace: PixelWorkspace, expectedRevision: number) {
@@ -259,6 +287,12 @@ function spriteRows(projectId: string, workspace: PixelWorkspace) {
 
 class CloudConflictError extends Error {}
 
+function isNetworkError(error: unknown) {
+  if (!globalThis.navigator?.onLine) return true
+  if (error instanceof TypeError) return /fetch|network|load failed/i.test(error.message)
+  return false
+}
+
 function ensureCloudIds(workspace: PixelWorkspace) {
   const ids = new Set<string>()
   const replacements = new Map<string, string>()
@@ -277,4 +311,10 @@ function ensureCloudIds(workspace: PixelWorkspace) {
 
 function isUuid(value: string) {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value)
+}
+
+function hasMeaningfulArtwork(workspace: PixelWorkspace) {
+  return workspace.sprites.length > 1 || workspace.sprites.some((sprite) =>
+    sprite.name !== 'Untitled sprite' || sprite.width !== 32 || sprite.height !== 32 || sprite.pixels.some(Boolean),
+  )
 }

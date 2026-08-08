@@ -217,28 +217,33 @@
   z-index: 7;
   right: 12px;
   bottom: 12px;
-  padding: 6px 9px;
+  display: flex;
+  align-items: center;
+  padding: 7px 9px;
   border: 1px solid #8f8b80;
   background: var(--paper);
   box-shadow: 2px 2px 0 rgba(23, 24, 18, .18);
   font: 700 var(--text-micro)/1.2 DM Mono, monospace;
-  text-transform: uppercase;
-  letter-spacing: .05em;
+  overflow: hidden;
 }
 .file-status-conflict,
 .file-status-invalid,
-.file-status-offline { color: #a1271e; border-color: #a1271e; }
+.file-status-offline,
+.file-status-sync-error { color: #a1271e; border-color: #a1271e; }
 .file-status-saving,
 .file-status-unsaved { color: #765b00; border-color: #9b7b0c; }
 .file-blocker {
   position: fixed;
-  inset: 64px 0 0;
+  inset: 0;
   z-index: 8;
   display: grid;
   place-items: center;
   padding: 24px;
   background: rgba(23, 24, 18, .72);
 }
+.file-loader { background: rgba(23, 24, 18, .42); }
+.workspace-spinner { width: 38px; height: 38px; border: 4px solid rgba(255,255,255,.35); border-top-color: white; border-radius: 50%; animation: workspace-spin .72s linear infinite; }
+@keyframes workspace-spin { to { transform: rotate(1turn); } }
 .file-blocker section,
 .conflict-dialog {
   width: min(620px, 100%);
@@ -254,7 +259,8 @@
 .file-blocker code { font: 500 var(--text-micro)/1.4 DM Mono, monospace; overflow-wrap: anywhere; }
 .conflict-actions { justify-content: flex-end; gap: 8px; }
 .auth-dialog { position: relative; width: min(430px, 100%); padding: 28px; border: 1px solid var(--ink); background: var(--paper); box-shadow: 8px 8px 0 var(--signal); }
-.auth-dialog h2 { margin: 0 36px 22px 0; font-size: var(--text-heading); line-height: 1.1; letter-spacing: -.04em; }
+.auth-dialog h2 { margin: 0 36px 10px 0; font-size: var(--text-heading); line-height: 1.1; letter-spacing: -.04em; }
+.auth-intro { margin: 0 0 20px; color: #5d5b54; font-size: var(--text-control); line-height: 1.5; }
 .auth-dialog form, .auth-dialog form label { display: grid; gap: 8px; }
 .auth-dialog form { gap: 14px; }
 .auth-dialog label { color: var(--ink); font-size: var(--text-control); font-weight: 800; }
@@ -271,3 +277,18 @@
 .auth-message.auth-error { color: #a1271e; }
 .auth-mode { width: 100%; margin-top: 16px; border: 0; background: transparent; color: var(--ink); cursor: pointer; font: 700 var(--text-control) inherit; text-decoration: underline; }
 .auth-close { position: absolute; top: 14px; right: 14px; width: 32px; height: 32px; border: 1px solid var(--ink); background: transparent; color: var(--ink); cursor: pointer; font-size: 20px; }
+.sync-notice { position: fixed; z-index: 7; right: 12px; bottom: 54px; width: min(470px, calc(100vw - 24px)); display: grid; grid-template-columns: 46px 1fr auto 30px; align-items: center; gap: 10px; padding: 10px; border: 1px solid var(--ink); background: var(--paper); box-shadow: 5px 5px 0 rgba(23,24,18,.2); }
+.sync-notice-mark { width: 42px; height: 42px; display: grid; place-items: center; background: var(--ink); color: white; font: 800 var(--text-micro) DM Mono, monospace; }
+.sync-notice-mark svg { width: 24px; height: 24px; }
+.sync-notice p { display: grid; gap: 3px; margin: 0; min-width: 0; }
+.sync-notice p b { font-size: var(--text-control); }
+.sync-notice p span { color: #5d5b54; font-size: var(--text-micro); line-height: 1.35; }
+.sync-notice-action { border: 1px solid var(--ink); background: var(--signal); color: white; padding: 8px 10px; cursor: pointer; font-size: var(--text-micro); font-weight: 800; white-space: nowrap; }
+.sync-notice-close { width: 28px; height: 28px; border: 0; background: transparent; color: var(--ink); cursor: pointer; font-size: 20px; }
+.sync-notice-success { grid-template-columns: 46px 1fr 30px; }
+.sync-notice-success .sync-notice-mark { background: #4f5d2f; font-size: 18px; }
+@media (max-width: 600px) {
+  .sync-notice { grid-template-columns: 38px 1fr 28px; }
+  .sync-notice-mark { width: 36px; height: 36px; }
+  .sync-notice-action { grid-column: 2 / 3; justify-self: start; }
+}

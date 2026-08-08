@@ -21,3 +21,11 @@ Hard:
 [ ] plan db schema and apis for user accounts, sprites, palettes
 [ ] import of pallete packages
 [ ] choosing default color pallete among the existing ones
+[ ] adding more tools?
+[ ] think of a cool ai feature (good to have)
+
+Very hard:
+[ ] collaborative, real time editing
+[ ] agentic editing
+[ ] exporting as game assets
+[ ] showing thumbnails of files in list

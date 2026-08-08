@@ -4,6 +4,11 @@ dist/
 .env
 .env.*
 !.env.example
+.cursor
+.mcp.json
+.zcp/
+.zerops-tools/
+.zerops-mcp
 Plans/
 Reports/
 

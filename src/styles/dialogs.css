@@ -330,7 +330,7 @@
 .file-blocker p,
 .conflict-dialog p { color: #5d5b54; font-size: var(--text-body); line-height: 1.5; }
 .file-blocker code { font: 500 var(--text-micro)/1.4 DM Mono, monospace; overflow-wrap: anywhere; }
-.conflict-actions { justify-content: flex-end; gap: 8px; }
+.conflict-actions { justify-content: flex-end; flex-wrap: wrap; gap: 8px; }
 .confirmation-backdrop { z-index: 12; }
 .confirmation-dialog {
   width: min(460px, 100%);

@@ -402,7 +402,7 @@ export function useWorkspace(user: User | null, onExternalSpriteChange?: (id: st
   }, [])
 
   return {
-    workspace, hydrated: status !== 'loading', writable: true, diagnostics: [] as FileDiagnostic[], status, syncError, conflict,
+    workspace, cloudProjectId: projectIdRef.current, hydrated: status !== 'loading', writable: true, diagnostics: [] as FileDiagnostic[], status, syncError, conflict,
     updateManifest, updateSprite, createSprite, resolveConflict, copyConflictDraft, exportConflictDraft, setReconciliationPaused,
     syncNotice, dismissSyncNotice: () => setSyncNotice(null), showGuestNudge,
     dismissGuestNudge: () => { trySetLocalValue(guestNudgeSeenKey, 'true'); setShowGuestNudge(false) },

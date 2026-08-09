@@ -1,5 +1,6 @@
 import { Reorder } from 'framer-motion'
 import { useEffect, useRef, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { AgentIcon, DownloadIcon, RedoIcon, UndoIcon } from '../../icons'
 import type { PixelWorkspace } from '../../types'
 import { Brand } from '../01_atoms/Brand'
@@ -24,10 +25,11 @@ type TopBarProps = {
   onRedo: () => void
   onRenameSprite: (id: string, name: string) => void
   onSelectSprite: (id: string) => void
+  onShare: () => void
   onUndo: () => void
 }
 
-export function TopBar({ accountEmail, accountLoading, activeSpriteId, canRedo, canUndo, sprites, onSignIn, onSignOut, onAddSprite, onCloseSprite, onExport, onReorderSprites, onOpenFiles, onOpenGuide, onRedo, onRenameSprite, onSelectSprite, onUndo }: TopBarProps) {
+export function TopBar({ accountEmail, accountLoading, activeSpriteId, canRedo, canUndo, sprites, onSignIn, onSignOut, onAddSprite, onCloseSprite, onExport, onReorderSprites, onOpenFiles, onOpenGuide, onRedo, onRenameSprite, onSelectSprite, onShare, onUndo }: TopBarProps) {
   const [accountMenuOpen, setAccountMenuOpen] = useState(false)
   const accountMenuRef = useRef<HTMLDivElement>(null)
   const accountInitial = accountEmail?.trim().charAt(0).toUpperCase() || 'A'
@@ -41,7 +43,7 @@ export function TopBar({ accountEmail, accountLoading, activeSpriteId, canRedo, 
   }, [])
 
   return <header className={styles.topbar}>
-    <Brand />
+    <Link className={styles.brandLink} to="/" aria-label="Go to Pixel Ape home"><Brand /></Link>
     <nav className={styles.tabs} aria-label="Sprite tabs">
       <Reorder.Group
         as="div"
@@ -81,6 +83,7 @@ export function TopBar({ accountEmail, accountLoading, activeSpriteId, canRedo, 
       <span className={styles.agentButtonTooltip} data-tooltip="Coming soon">
         <button className={styles.agentButton} disabled aria-label="Edit with AI — coming soon"><AgentIcon /> Edit with AI</button>
       </span>
+      <button className={styles.shareButton} onClick={onShare}>Share</button>
       <button className={styles.exportButton} onClick={onExport}><DownloadIcon /> Export PNG</button>
     </div>
   </header>

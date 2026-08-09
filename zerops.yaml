@@ -9,3 +9,22 @@ zerops:
         - dist/~
     run:
       base: static
+  - setup: api
+    build:
+      base: nodejs@20
+      buildCommands:
+        - |
+          cd api
+          npm ci
+          npm run build
+          npm prune --omit=dev
+          mkdir -p .deploy
+          cp package.json .deploy/
+          cp -R dist node_modules .deploy/
+      deployFiles:
+        - api/.deploy/~
+    run:
+      base: nodejs@20
+      ports:
+        - port: 3000
+      start: npm start

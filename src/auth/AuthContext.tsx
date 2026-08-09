@@ -7,6 +7,7 @@ type AuthContextValue = {
   loading: boolean
   user: User | null
   signOut: () => Promise<void>
+  getAccessToken: () => Promise<string | null>
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null)
@@ -35,6 +36,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     loading,
     user,
     signOut: async () => { if (supabase) await supabase.auth.signOut() },
+    getAccessToken: async () => (await supabase?.auth.getSession())?.data.session?.access_token ?? null,
   }), [loading, user])
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>

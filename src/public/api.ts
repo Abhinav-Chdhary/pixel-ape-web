@@ -3,6 +3,8 @@ export type PixelPayload = { width: number; height: number; background: string; 
 export type GalleryItem = { slug: string; title: string; width: number; height: number; background: string; authorName: string; updatedAt: string; preview: PixelPayload }
 export type PublicSprite = { slug: string; title: string; width: number; height: number; background: string; authorName: string; updatedAt: string; pixels: Array<string | null> }
 export type PublicationState = GalleryItem & { url: string; visibility: Visibility }
+export type SpritePreviewPayload = Omit<PixelPayload, 'background'>
+export type SpritePreviewItem = { id: string; name: string; width: number; height: number; background: string; preview: SpritePreviewPayload }
 
 const origin = import.meta.env.VITE_API_URL?.trim().replace(/\/$/, '')
 
@@ -34,6 +36,10 @@ function authorized(token: string) { return { authorization: `Bearer ${token}` }
 
 export function getPublication(projectId: string, spriteId: string, token: string) {
   return request<PublicationState | null>(`/v1/publications/source/${encodeURIComponent(projectId)}/${encodeURIComponent(spriteId)}`, { headers: authorized(token) })
+}
+
+export function getSpritePreviews(projectId: string, token: string) {
+  return request<{ items: SpritePreviewItem[] }>(`/v1/projects/${encodeURIComponent(projectId)}/sprite-previews`, { headers: authorized(token) })
 }
 
 export function publishSprite(projectId: string, spriteId: string, visibility: Visibility, token: string) {

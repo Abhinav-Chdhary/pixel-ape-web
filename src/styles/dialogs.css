@@ -267,7 +267,7 @@
 .existing-sprites > button { width: 100%; display: flex; justify-content: space-between; gap: 12px; margin-top: 7px; padding: 8px; border: 1px solid #aaa69a; background: #f1eee5; color: var(--ink); cursor: pointer; text-align: left; font: 700 var(--text-control) inherit; }
 .existing-sprites > button:hover { background: white; }
 .existing-sprites small, .file-name small { color: #68665f; font: 500 var(--text-micro) DM Mono, monospace; }
-.file-list-dialog { width: min(640px, 100%); max-height: min(720px, 100%); overflow: auto; background: var(--paper); border: 1px solid var(--ink); box-shadow: 8px 8px 0 var(--signal); padding: 28px; }
+.file-list-dialog { width: min(760px, 100%); max-height: min(720px, 100%); overflow: auto; background: var(--paper); border: 1px solid var(--ink); box-shadow: 8px 8px 0 var(--signal); padding: 28px; }
 .file-list-dialog h2 { margin: 0 0 6px; font-size: var(--text-heading); line-height: 1.1; letter-spacing: -0.04em; }
 .file-list-intro { margin: 0 0 16px; color: #5d5b54; font-size: var(--text-body); }
 .file-list { border-top: 1px solid #aaa69a; }
@@ -281,6 +281,7 @@
 .file-actions button:hover:not(:disabled) { background: white; }
 .file-actions .delete-file { color: #8c2720; }
 .file-actions button:disabled { opacity: .45; cursor: default; }
+@media (max-width: 640px) { .file-list-dialog { padding: 18px; } .file-list article { align-items: flex-start; } .file-actions { flex-wrap: wrap; justify-content: flex-end; } }
 .quiet-button {
   color: var(--ink) !important;
   background: transparent !important;

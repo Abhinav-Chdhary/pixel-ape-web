@@ -9,6 +9,10 @@ type PublicationRow = {
   id: string; slug: string; visibility: Visibility; title: string; width: number; height: number; background: string; pixels: Array<string | null>
   preview_width: number; preview_height: number; preview_pixels: Array<string | null>; author_name: string; updated_at: string; source_project_id: string; source_sprite_id: string
 }
+type SpritePreviewRow = {
+  id: string; name: string; width: number; height: number; background: string
+  preview_width: number; preview_height: number; preview_pixels: Array<string | null>
+}
 
 function errorHandler(error: unknown, _request: Request, response: Response, _next: NextFunction) {
   console.error(error)
@@ -46,6 +50,22 @@ export function createApp(config: Config) {
   app.use(cors({ origin: allowedOrigins?.length ? allowedOrigins : true, methods: ['GET', 'POST'] }))
   app.use(express.json({ limit: '32kb' }))
   app.get('/health', (_request, response) => response.json({ ok: true }))
+
+  app.get('/v1/projects/:projectId/sprite-previews', async (request, response, next) => {
+    try {
+      const user = await authenticatedUser(request, response, supabase)
+      if (!user) return
+      const { data: project, error: projectError } = await supabase.from('projects').select('id').eq('id', request.params.projectId).eq('owner_id', user.id).is('deleted_at', null).maybeSingle<{ id: string }>()
+      if (projectError) throw projectError
+      if (!project) { response.status(404).json({ error: 'This workspace is unavailable.' }); return }
+      const { data, error } = await supabase.from('sprites').select('id,name,width,height,background,preview_width,preview_height,preview_pixels').eq('project_id', project.id).order('position').returns<SpritePreviewRow[]>()
+      if (error) throw error
+      response.json({ items: (data ?? []).map((sprite) => ({
+        id: sprite.id, name: sprite.name, width: sprite.width, height: sprite.height, background: sprite.background,
+        preview: { width: sprite.preview_width, height: sprite.preview_height, pixels: sprite.preview_pixels },
+      })) })
+    } catch (error) { next(error) }
+  })
 
   app.get('/v1/gallery', async (request, response, next) => {
     try {

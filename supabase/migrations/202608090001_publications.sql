@@ -3,7 +3,7 @@
 create function public.new_publication_slug()
 returns text
 language sql volatile set search_path = '' as $$
-  select translate(encode(gen_random_bytes(18), 'base64'), '+/', '-_')
+  select replace(gen_random_uuid()::text, '-', '')
 $$;
 
 create table public.publications (
@@ -11,7 +11,7 @@ create table public.publications (
   owner_id uuid not null references auth.users(id) on delete cascade,
   source_project_id uuid not null,
   source_sprite_id uuid not null,
-  slug text not null default public.new_publication_slug() check (slug ~ '^[A-Za-z0-9_-]{24}$'),
+  slug text not null default public.new_publication_slug() check (slug ~ '^[a-f0-9]{32}$'),
   visibility text not null check (visibility in ('unlisted', 'gallery')),
   title text not null check (char_length(title) between 1 and 80),
   width smallint not null check (width between 4 and 512),

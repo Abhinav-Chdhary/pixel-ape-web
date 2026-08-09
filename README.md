@@ -31,13 +31,14 @@ Signed-in creators can publish a saved sprite as either an unlisted public link 
 
 The Vite app needs `VITE_API_URL` at build time. The Express service in `api/` needs `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, and `ALLOWED_ORIGIN` at runtime. The API service-role key must only be configured in Zerops; it must never be added to browser variables or committed files.
 
-Run the API locally after setting its server-only environment variables:
+Run the API locally with a server-only environment file:
 
 ```bash
 cd api
+cp .env.example .env
+# Fill in the Supabase URL and service-role key in api/.env.
 npm install
-npm run build
-npm start
+npm run dev
 ```
 
 ## Deployment architecture

@@ -1,4 +1,5 @@
 import { useState, type FormEvent } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { isSupabaseConfigured, supabase } from '../lib/supabase'
 
 type AuthDialogProps = { onClose: () => void }
@@ -19,6 +20,7 @@ function GitHubIcon() {
 }
 
 export function AuthDialog({ onClose }: AuthDialogProps) {
+  const navigate = useNavigate()
   const [mode, setMode] = useState<'signin' | 'signup'>('signin')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -31,7 +33,7 @@ export function AuthDialog({ onClose }: AuthDialogProps) {
     setBusy(true); setMessage('')
     const result = mode === 'signin'
       ? await supabase.auth.signInWithPassword({ email, password })
-      : await supabase.auth.signUp({ email, password, options: { emailRedirectTo: window.location.origin } })
+      : await supabase.auth.signUp({ email, password, options: { emailRedirectTo: `${window.location.origin}/workspace` } })
     setBusy(false)
     if (result.error) { setMessage(result.error.message); return }
     if (mode === 'signup' && !result.data.session) {
@@ -39,12 +41,13 @@ export function AuthDialog({ onClose }: AuthDialogProps) {
       return
     }
     onClose()
+    navigate('/workspace', { replace: true })
   }
 
   const oauth = async (provider: 'google' | 'github') => {
     if (!supabase) return
     setBusy(true); setMessage('')
-    const { error } = await supabase.auth.signInWithOAuth({ provider, options: { redirectTo: window.location.origin } })
+    const { error } = await supabase.auth.signInWithOAuth({ provider, options: { redirectTo: `${window.location.origin}/workspace` } })
     if (error) { setBusy(false); setMessage(error.message) }
   }
 

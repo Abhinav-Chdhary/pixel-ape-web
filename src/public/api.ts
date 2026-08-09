@@ -8,7 +8,15 @@ const origin = import.meta.env.VITE_API_URL?.trim().replace(/\/$/, '')
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   if (!origin) throw new Error('The public gallery is not configured yet.')
-  const response = await fetch(`${origin}${path}`, init)
+  const controller = new AbortController()
+  const timeout = window.setTimeout(() => controller.abort(), 15_000)
+  let response: Response
+  try {
+    response = await fetch(`${origin}${path}`, { ...init, signal: controller.signal })
+  } catch (error) {
+    if (error instanceof DOMException && error.name === 'AbortError') throw new Error('The public API did not respond. Check that it is running at VITE_API_URL.')
+    throw error
+  } finally { window.clearTimeout(timeout) }
   const body = await response.json().catch(() => null) as { error?: string } | T | null
   if (!response.ok) throw new Error(body && typeof body === 'object' && 'error' in body && typeof body.error === 'string' ? body.error : 'Request failed.')
   return body as T

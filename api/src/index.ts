@@ -1,3 +1,4 @@
+import 'dotenv/config'
 import cors from 'cors'
 import express, { type NextFunction, type Request, type Response } from 'express'
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
@@ -40,8 +41,9 @@ async function authenticatedUser(request: Request, response: Response, supabase:
 export function createApp(config: Config) {
   const supabase = createClient(config.supabaseUrl, config.serviceRoleKey, { auth: { persistSession: false, autoRefreshToken: false } })
   const app = express()
+  const allowedOrigins = config.allowedOrigin?.split(',').map((origin) => origin.trim()).filter(Boolean)
   app.disable('x-powered-by')
-  app.use(cors({ origin: config.allowedOrigin ? [config.allowedOrigin] : true, methods: ['GET', 'POST'] }))
+  app.use(cors({ origin: allowedOrigins?.length ? allowedOrigins : true, methods: ['GET', 'POST'] }))
   app.use(express.json({ limit: '32kb' }))
   app.get('/health', (_request, response) => response.json({ ok: true }))
 

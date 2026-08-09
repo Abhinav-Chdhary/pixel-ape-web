@@ -1,7 +1,11 @@
 zerops:
   - setup: pixelape
     build:
-      base: nodejs@20
+      base: nodejs@22
+      envVariables:
+        VITE_SUPABASE_URL: ${RUNTIME_VITE_SUPABASE_URL}
+        VITE_SUPABASE_PUBLISHABLE_KEY: ${RUNTIME_VITE_SUPABASE_PUBLISHABLE_KEY}
+        VITE_API_URL: ${RUNTIME_VITE_API_URL}
       buildCommands:
         - npm ci
         - npm run build
@@ -11,20 +15,24 @@ zerops:
       base: static
   - setup: api
     build:
-      base: nodejs@20
+      base: nodejs@22
       buildCommands:
         - |
           cd api
           npm ci
           npm run build
           npm prune --omit=dev
-          mkdir -p .deploy
-          cp package.json .deploy/
-          cp -R dist node_modules .deploy/
+          mkdir -p deploy
+          cp package.json deploy/
+          cp -R dist node_modules deploy/
       deployFiles:
-        - api/.deploy/~
+        - api/~deploy
     run:
-      base: nodejs@20
+      base: nodejs@22
       ports:
         - port: 3000
-      start: npm start
+          httpSupport: true
+      envVariables:
+        NODE_ENV: production
+        PORT: "3000"
+      start: node deploy/dist/index.js

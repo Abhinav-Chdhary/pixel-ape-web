@@ -1,0 +1,17 @@
+.git/
+.env
+.env.*
+!.env.example
+.mcp.json
+.zcp/
+.zerops-mcp
+.zerops-tools/
+.claude/
+.cursor/
+/node_modules/
+/dist/
+api/.env
+/api/node_modules/
+/api/dist/
+Plans/
+Reports/

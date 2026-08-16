@@ -1,6 +1,6 @@
 # Pixel Ape
 
-Pixel Ape is a browser pixel-art workspace for creating, saving, reopening, and exporting sprite projects.
+Pixel Ape is a browser pixel-art workspace for creating sprites.
 
 Production URL: [pixelape.abhinavs.org](https://pixelape.abhinavs.org/)
 
@@ -47,4 +47,4 @@ npm run dev
 React frontend → Zerops Express publication API → Supabase Auth + PostgreSQL with RLS
 ```
 
-The frontend is built by Zerops and served as a static site. The API is a second Zerops Node.js service named `api`; create that runtime service in the Zerops project before deploying the matching second entry in `zerops.yaml`.
+The app is served by Zerops.
